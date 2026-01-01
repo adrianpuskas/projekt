@@ -1,0 +1,11 @@
+# databázy
+*.db
+*.sqlite
+*.sqlite3
+
+# python cache
+__pycache__/
+*.pyc
+
+# logy
+*.log
