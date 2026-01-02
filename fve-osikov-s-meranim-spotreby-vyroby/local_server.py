@@ -268,7 +268,7 @@ HTML_TEMPLATE = r"""
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       width: 180px;           /* trocha širší ako vysoký – vyzerá lepšie ako obdĺžnik */
-      height: 160px;
+      height: 220px;
       background: rgba(13, 202, 240, 0.25);   /* trocha jemnejší priehľadný podklad */
       border: 6px solid var(--primary);      /* o niečo tenší okraj */
       border-radius: 20px;                   /* zaoblené rohy – 20px je pekné, moderné */
@@ -280,10 +280,12 @@ HTML_TEMPLATE = r"""
       z-index: 10;
       padding: 10px 0;       /* trocha vnútorného priestoru hore/dole */
     }
+
     .inverter-center i { font-size: 1rem; color: var(--primary); }
     .component {
       position: absolute;
-      width: 160px;
+      width: 150px;
+      height: 170px;
       text-align: center;
       background: var(--card);
       padding: 22px;
@@ -291,6 +293,7 @@ HTML_TEMPLATE = r"""
       box-shadow: 0 12px 40px rgba(0,0,0,0.6);
       z-index: 5;
     }
+    
     .flow-dot {
       position: absolute;
       width: 20px; height: 20px;
@@ -301,6 +304,59 @@ HTML_TEMPLATE = r"""
       display: none;
       z-index: 3;
     }
+
+    /* Jemný hover pre celú skupinu tlačidiel */
+    .btn-group:hover {
+      box-shadow: 0 8px 25px rgba(13, 202, 240, 0.25);
+      transform: translateY(-3px);
+      transition: all 0.3s ease;
+    }
+
+    /* Ešte lepší efekt pre primárne tlačidlo vnútri */
+    .btn-group .btn-primary {
+      transition: all 0.3s ease;
+    }
+    .btn-group .btn-primary:hover {
+      box-shadow: 0 6px 20px rgba(13, 202, 240, 0.4);
+    }
+
+    /* Hrubší a jasnejší modrý okraj pre outline tlačidlo */
+    .custom-outline {
+      border-width: 2px !important;
+      border-color: var(--primary);
+    }
+
+    /* Ešte lepšia viditeľnosť pri hover/focus */
+    .custom-outline:hover,
+    .custom-outline:focus {
+      background: rgba(13, 202, 240, 0.15);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 0.25rem rgba(13, 202, 240, 0.3);
+    }
+
+    /* Jemný lift efekt pre všetky tlačidlá v tejto sekcii */
+    #sub-control .btn {
+      transition: all 0.25s ease;
+    }
+    #sub-control .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Zabezpečí, že tlačidlá nebudú príliš úzke ani na mobile */
+    .min-width-btn {
+      min-width: 220px;
+    }
+
+    /* Jemný hover lift aj pre BMS tlačidlá – rovnako ako v Ovládaní meniča */
+    #sub-bms .btn {
+      transition: all 0.25s ease;
+    }
+    #sub-bms .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    }
+
     @keyframes flow { 0% { transform: translate(0, 0); } 100% { transform: var(--move); } }
     @media (max-width: 768px) {
       .diagram-container { height: 75vh; min-height: 560px; }
@@ -365,7 +421,7 @@ HTML_TEMPLATE = r"""
         </div>
       </div>
 
-      <div class="card shadow-lg mb-5 clickable-card" onclick="showMainSection('topenie')">
+      <div class="card shadow-lg mb-4 clickable-card" onclick="showMainSection('topenie')">
         <div class="card-body py-4">
           <div class="row align-items-center">
             <div class="col-3 text-center"><i class="fas fa-fire fa-4x text-danger"></i></div>
@@ -411,12 +467,12 @@ HTML_TEMPLATE = r"""
 
       <div id="sub-home" class="sub-section active">
         <div class="container py-4">
-          <h2 class="text-center mb-5 text-primary fw-bold">Prehľad systému</h2>
+          <h2 class="text-center mb-5 text-primary fw-bold ">Prehľad systému</h2>
           <div class="diagram-container">
 
             <div class="inverter-center">
               <i class="fas fa-bolt"></i>
-              <div class="mt-2 small">Menič</div>
+              <div class="mt-2 small">Inverter</div>
               <div class="fw-bold fs-3" id="inverter-temp">-</div>
             </div>
 
@@ -483,11 +539,46 @@ HTML_TEMPLATE = r"""
             </div>
           </div>
           <button class="btn btn-outline-info mb-4" id="toggle-custom">Vlastný rozsah</button>
-          <div id="energy-summary" class="row mb-4 g-2">
-            <div class="col-6"><div class="energy-card text-warning"><strong>Výroba PV</strong><span class="key-value" id="energy-pv">0</span> kWh</div></div>
-            <div class="col-6"><div class="energy-card text-info"><strong>Spotreba domu</strong><span class="key-value" id="energy-load">0</span> kWh</div></div>
-            <div class="col-6"><div class="energy-card text-success"><strong>Nabíjanie batérie</strong><span class="key-value" id="energy-charge">0</span> kWh</div></div>
-            <div class="col-6"><div class="energy-card text-danger"><strong>Vybíjanie batérie</strong><span class="key-value" id="energy-discharge">0</span> kWh</div></div>
+          <div id="energy-summary" class="row mb-5 g-4 justify-content-center">
+            <div class="col-6 col-md-3">
+              <div class="energy-card text-center p-4 rounded shadow-sm">
+                <div class="text-warning fw-bold mb-3 fs-5">Výroba PV</div>
+                <div class="d-flex justify-content-center align-items-baseline gap-2">
+                  <div class="key-value fs-2 fw-bold text-warning" id="energy-pv">0</div>
+                  <div class="fs-4 text-warning opacity-75">kWh</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <div class="energy-card text-center p-4 rounded shadow-sm">
+                <div class="text-info fw-bold mb-3 fs-5">Spotreba</div>
+                <div class="d-flex justify-content-center align-items-baseline gap-2">
+                  <div class="key-value fs-2 fw-bold text-info" id="energy-load">0</div>
+                  <div class="fs-4 text-info opacity-75">kWh</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <div class="energy-card text-center p-4 rounded shadow-sm">
+                <div class="text-success fw-bold mb-3 fs-5">Nabíjanie</div>
+                <div class="d-flex justify-content-center align-items-baseline gap-2">
+                  <div class="key-value fs-2 fw-bold text-success" id="energy-charge">0</div>
+                  <div class="fs-4 text-success opacity-75">kWh</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <div class="energy-card text-center p-4 rounded shadow-sm">
+                <div class="text-danger fw-bold mb-3 fs-5">Vybíjanie</div>
+                <div class="d-flex justify-content-center align-items-baseline gap-2">
+                  <div class="key-value fs-2 fw-bold text-danger" id="energy-discharge">0</div>
+                  <div class="fs-4 text-danger opacity-75">kWh</div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="row">
             <div class="col-12"><div class="chart-container"><canvas id="chartPower"></canvas></div></div>
@@ -546,46 +637,51 @@ HTML_TEMPLATE = r"""
             <div class="row g-2" id="bms-cells"></div>
           </div>
 
-          <div class="row justify-content-center mt-5">
-            <div class="col-12 col-md-10 col-lg-8">
-              <h4 class="text-center text-primary mb-5 fw-bold">Ovládanie BMS</h4>
-              <div class="row g-3 mb-4 justify-content-center">
-                <div class="col-5">
-                  <button class="btn btn-success w-100 py-3 rounded-pill shadow d-flex flex-column align-items-center justify-content-center"
+                    <div class="row justify-content-center mt-5">
+            <div class="col-12 col-md-9 col-lg-7"> <!-- Užšie na veľkých obrazovkách -->
+              <div class="card p-4 shadow"> <!-- Karta okolo ovládania -->
+                <h4 class="text-center text-primary mb-4 fw-bold">Ovládanie BMS</h4>
+
+                <!-- Nabíjanie: ON / OFF -->
+                <div class="d-flex flex-column flex-sm-row gap-3 justify-content-center align-items-center mb-4">
+                  <button class="btn btn-success px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
                           onclick="controlBMS('charge_on')">
-                    <i class="fas fa-plug fa-3x mb-2 text-white"></i>
-                    <div class="fw-bold">Nabíjanie</div>
-                    <small>ZAPNÚŤ</small>
+                    <i class="fas fa-plug me-2"></i>
+                    <span class="d-none d-sm-inline">Zapnúť nabíjanie</span>
+                    <span class="d-inline d-sm-none">Nabíjanie ON</span>
                   </button>
-                </div>
-                <div class="col-5">
-                  <button class="btn btn-danger w-100 py-3 rounded-pill shadow d-flex flex-column align-items-center justify-content-center"
+
+                  <button class="btn btn-danger px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
                           onclick="controlBMS('charge_off')">
-                    <i class="fas fa-power-off fa-3x mb-2 text-white"></i>
-                    <div class="fw-bold">Nabíjanie</div>
-                    <small>VYPNÚŤ</small>
+                    <i class="fas fa-power-off me-2"></i>
+                    <span class="d-none d-sm-inline">Vypnúť nabíjanie</span>
+                    <span class="d-inline d-sm-none">Nabíjanie OFF</span>
                   </button>
                 </div>
-              </div>
-              <div class="row g-3 justify-content-center">
-                <div class="col-5">
-                  <button class="btn btn-info w-100 py-3 rounded-pill shadow d-flex flex-column align-items-center justify-content-center"
+
+                <!-- Vybíjanie: ON / OFF -->
+                <div class="d-flex flex-column flex-sm-row gap-3 justify-content-center align-items-center">
+                  <button class="btn btn-info px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
                           onclick="controlBMS('discharge_on')">
-                    <i class="fas fa-bolt fa-3x mb-2 text-white"></i>
-                    <div class="fw-bold">Vybíjanie</div>
-                    <small>ZAPNÚŤ</small>
+                    <i class="fas fa-bolt me-2"></i>
+                    <span class="d-none d-sm-inline">Zapnúť vybíjanie</span>
+                    <span class="d-inline d-sm-none">Vybíjanie ON</span>
+                  </button>
+
+                  <button class="btn btn-danger px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
+                          onclick="controlBMS('discharge_off')">
+                    <i class="fas fa-power-off me-2"></i>
+                    <span class="d-none d-sm-inline">Vypnúť vybíjanie</span>
+                    <span class="d-inline d-sm-none">Vybíjanie OFF</span>
                   </button>
                 </div>
-                <div class="col-5">
-                  <button class="btn btn-danger w-100 py-3 rounded-pill shadow d-flex flex-column align-items-center justify-content-center"
-                          onclick="controlBMS('discharge_off')">
-                    <i class="fas fa-power-off fa-3x mb-2 text-white"></i>
-                    <div class="fw-bold">Vybíjanie</div>
-                    <small>VYPNÚŤ</small>
-                  </button>
+
+                <div class="mt-4 text-center text-muted small opacity-75">
+                  Ovládanie cez JK-BMS (relé)
                 </div>
               </div>
             </div>
+          
           </div>
         </div>
       </div>
@@ -679,10 +775,33 @@ HTML_TEMPLATE = r"""
             </div>
           </div>
 
-          <div class="text-center">
-            <button class="btn btn-warning btn-lg px-5 py-3 mx-2" onclick="readSettings()">Prečítať dáta</button>
-            <button class="btn btn-success btn-lg px-5 py-3 mx-2" onclick="writeSettings()">Zápis dát</button>
-            <button class="btn btn-danger btn-lg px-5 py-3 mx-2" onclick="restartScript()">Reštart skriptu</button>
+          <div class="text-center mt-5">
+            <div class="d-flex flex-column flex-md-row gap-3 justify-content-center align-items-center">
+              <button class="btn btn-outline-primary px-5 py-3 rounded-pill shadow-sm fw-medium custom-outline" 
+                      onclick="readSettings()">
+                <i class="fas fa-download me-2"></i>
+                <span class="d-none d-sm-inline">Načítať nastavenia</span>
+                <span class="d-inline d-sm-none">Načítať</span>
+              </button>
+
+              <button class="btn btn-primary px-5 py-3 rounded-pill shadow fw-bold" 
+                      onclick="writeSettings()">
+                <i class="fas fa-upload me-2"></i>
+                <span class="d-none d-sm-inline">Zapísať nastavenia</span>
+                <span class="d-inline d-sm-none">Zapísať</span>
+              </button>
+
+              <button class="btn btn-danger px-5 py-3 rounded-pill shadow-sm fw-medium" 
+                      onclick="restartScript()">
+                <i class="fas fa-redo-alt me-2"></i>
+                <span class="d-none d-sm-inline">Reštart skriptu</span>
+                <span class="d-inline d-sm-none">Reštart</span>
+              </button>
+            </div>
+
+            <div class="mt-3 text-muted small opacity-75">
+              Ovládanie meniča a skriptu Main.py
+            </div>
           </div>
         </div>
       </div>
@@ -697,22 +816,22 @@ HTML_TEMPLATE = r"""
 
     <div id="distribucia" class="section">
       <div class="container">
-        <h2 class="text-center mb-5 mt-4 text-primary fw-bold">Meranie distribúcie elektrickej energie</h2>
+        <h2 class="text-center mb-4 mt-4 text-primary fw-bold">Meranie distribúcie elektrickej energie</h2>
 
         <div class="row g-4" id="distribucia-content">
           <!-- Dynamicky vyplnené cez JS -->
         </div>
 
-        <div class="card mt-5 p-4 shadow">
-          <h4 class="text-center text-primary">Súčty</h4>
+        <div class="card mb-4 mt-5 p-4 shadow">
+          <h4 class="text-center text-primary">Spolu</h4>
           <div class="row text-center">
             <div class="col-md-6">
-              <div class="fs-3 fw-bold text-info" id="dist-total-power">-</div>
               <div class="text-muted">Celkový výkon</div>
+              <div class="fs-3 fw-bold text-info" id="dist-total-power">-</div>
             </div>
             <div class="col-md-6">
-              <div class="fs-3 fw-bold text-warning" id="dist-total-energy">-</div>
               <div class="text-muted">Celková spotreba od resetu</div>
+              <div class="fs-3 fw-bold text-warning" id="dist-total-energy">-</div>
             </div>
           </div>
         </div>
