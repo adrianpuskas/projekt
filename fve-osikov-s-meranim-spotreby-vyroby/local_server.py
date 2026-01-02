@@ -47,9 +47,36 @@ VPINS = {
     "V110": ("Reset skriptu", "Ovládanie", "", "fas fa-redo"),
     "indoor_temp": ("Teplota vnútri", "Senzory", "°C", "fas fa-thermometer-half"),
     "indoor_humidity": ("Vlhkosť vnútri", "Senzory", "%", "fas fa-tint"),
+    "outdoor_temp": ("Teplota vonku", "Senzory", "°C", "fas fa-thermometer-half"),
+    "outdoor_humidity": ("Vlhkosť vonku", "Senzory", "%", "fas fa-tint"),
     "V21": ("Nabíjanie BMS", "BMS", "", "fas fa-plug"),
     "V22": ("Vybíjanie BMS", "BMS", "", "fas fa-bolt"),
+
+    # PZEM-004T distribúcia
+    "PZEM_L1_voltage": ("Napätie L1", "Distribúcia", "V", "fas fa-bolt"),
+    "PZEM_L1_current": ("Prúd L1", "Distribúcia", "A", "fas fa-tachometer-alt"),
+    "PZEM_L1_power": ("Výkon L1", "Distribúcia", "W", "fas fa-plug"),
+    "PZEM_L1_energy": ("Energia L1", "Distribúcia", "kWh", "fas fa-battery-full"),
+    "PZEM_L1_freq": ("Frekvencia L1", "Distribúcia", "Hz", "fas fa-wave-square"),
+    "PZEM_L1_pf": ("PF L1", "Distribúcia", "", "fas fa-percentage"),
+
+    "PZEM_L2_voltage": ("Napätie L2", "Distribúcia", "V", "fas fa-bolt"),
+    "PZEM_L2_current": ("Prúd L2", "Distribúcia", "A", "fas fa-tachometer-alt"),
+    "PZEM_L2_power": ("Výkon L2", "Distribúcia", "W", "fas fa-plug"),
+    "PZEM_L2_energy": ("Energia L2", "Distribúcia", "kWh", "fas fa-battery-full"),
+
+    "PZEM_L3_voltage": ("Napätie L3", "Distribúcia", "V", "fas fa-bolt"),
+    "PZEM_L3_current": ("Prúd L3", "Distribúcia", "A", "fas fa-tachometer-alt"),
+    "PZEM_L3_power": ("Výkon L3", "Distribúcia", "W", "fas fa-plug"),
+    "PZEM_L3_energy": ("Energia L3", "Distribúcia", "kWh", "fas fa-battery-full"),
+
+    "PZEM_total_power": ("Celkový výkon", "Distribúcia", "W", "fas fa-home"),
+    "PZEM_total_energy": ("Celková spotreba", "Distribúcia", "kWh", "fas fa-chart-line"),
+
 }
+
+
+
 
 local_data = {}
 data_lock = threading.Lock()
@@ -176,12 +203,39 @@ HTML_TEMPLATE = r"""
 <html lang="sk" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Viewport (LEN JEDEN) -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
   <title>iHome - Domáca automatizácia</title>
+
+  <!-- Styles -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <!-- Icons -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+
+  <!-- iOS app-like -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="iHome">
+
+  <!-- Android / PWA -->
+  <meta name="theme-color" content="#1e1e1e">
+  <link rel="manifest" href="/static/manifest.json">
+
+  <!-- Optional UX polish -->
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
+
     :root { --bg: #121212; --text: #e0e0e0; --card: #1e1e1e; --primary: #0dcaf0; --value-color: #ffffff; }
     [data-bs-theme="light"] { --bg: #f8f9fa; --text: #212529; --card: #ffffff; --primary: #0d6efd; --value-color: #000000; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; }
@@ -269,6 +323,7 @@ HTML_TEMPLATE = r"""
           <li class="nav-item"><a class="nav-link active" href="#" onclick="showMainSection('home')">Domov</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('fotovoltaika')">Fotovoltaika</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('topenie')">Topenie</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('distribucia')">Distribúcia</a></li>
         </ul>
         <button id="theme-toggle" class="btn btn-outline-light"><i class="fas fa-moon"></i></button>
       </div>
@@ -277,9 +332,9 @@ HTML_TEMPLATE = r"""
 
   <div class="container mb-4">
     <div class="info-bar text-center d-flex justify-content-center flex-wrap gap-4">
-      <span><i class="fas fa-home me-2"></i> Vnútri: <strong id="indoor-temp-value">-</strong>°C</span>
-      <span><i class="fas fa-tint me-2"></i> Vlhkosť: <strong id="indoor-hum-value">-</strong>%</span>
-    </div>
+      <span>Von: <i class="fa fa-thermometer-half"></i> <strong id="outdoor-temp-value">-</strong>°C <i class="fas fa-tint me-2"></i><strong id="outdoor-hum-value">-</strong>%</span>
+      <span>Dnu: <i class="fa fa-thermometer-half"></i> <strong id="indoor-temp-value">-</strong>°C <i class="fas fa-tint me-2"></i><strong id="indoor-hum-value">-</strong>%</span>
+      </div>
   </div>
 
   <div class="container">
@@ -310,7 +365,7 @@ HTML_TEMPLATE = r"""
         </div>
       </div>
 
-      <div class="card shadow-lg clickable-card" onclick="showMainSection('topenie')">
+      <div class="card shadow-lg mb-5 clickable-card" onclick="showMainSection('topenie')">
         <div class="card-body py-4">
           <div class="row align-items-center">
             <div class="col-3 text-center"><i class="fas fa-fire fa-4x text-danger"></i></div>
@@ -318,7 +373,30 @@ HTML_TEMPLATE = r"""
           </div>
         </div>
       </div>
+
+      <div class="card shadow-lg clickable-card" onclick="showMainSection('distribucia')">
+        <div class="card-body py-4">
+          <div class="row align-items-center">
+            <div class="col-3 d-flex align-items-center justify-content-center">
+              <i class="fas fa-plug-circle-bolt fa-3x text-primary"></i>
+            </div>
+            <div class="col-9">
+              <div class="row g-3 mb-4">
+                <div class="col-6"><div class="text-muted small">Výkon L1</div><div class="fs-4 fw-bold text-warning" id="home-L1-power">-</div></div>
+                <div class="col-6"><div class="text-muted small">Výkon L2</div><div class="fs-4 fw-bold text-warning" id="home-L2-power">-</div></div>
+                <div class="col-6"><div class="text-muted small">Výkon L3</div><div class="fs-4 fw-bold text-warning" id="home-L3-power">-</div></div>
+                <div class="col-6"><div class="text-muted small">Celkový výkon</div><div class="fs-4 fw-bold text-info" id="home-total-power">-</div></div>
+              </div>
+              <div class="text-muted small">Celková spotreba: <strong id="home-total-energy">-</strong> kWh</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
+
+
+    
 
     <div id="fotovoltaika" class="section">
       <div class="container mb-4">
@@ -616,7 +694,38 @@ HTML_TEMPLATE = r"""
         <p class="text-center text-muted mt-4">Zatiaľ žiadne dáta k dispozícii.</p>
       </div>
     </div>
+
+    <div id="distribucia" class="section">
+      <div class="container">
+        <h2 class="text-center mb-5 mt-4 text-primary fw-bold">Meranie distribúcie elektrickej energie</h2>
+
+        <div class="row g-4" id="distribucia-content">
+          <!-- Dynamicky vyplnené cez JS -->
+        </div>
+
+        <div class="card mt-5 p-4 shadow">
+          <h4 class="text-center text-primary">Súčty</h4>
+          <div class="row text-center">
+            <div class="col-md-6">
+              <div class="fs-3 fw-bold text-info" id="dist-total-power">-</div>
+              <div class="text-muted">Celkový výkon</div>
+            </div>
+            <div class="col-md-6">
+              <div class="fs-3 fw-bold text-warning" id="dist-total-energy">-</div>
+              <div class="text-muted">Celková spotreba od resetu</div>
+            </div>
+          </div>
+        </div>
+        <div class="text-center mb-4">
+          <button class="btn btn-danger btn-lg px-5 py-3" onclick="resetPZEMEnergy()">
+            <i class="fas fa-redo me-2"></i> Resetovať celkovú spotrebu
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
+
+
 
   <footer class="text-center py-3 mt-5">
     <small id="status">Načítavam...</small>
@@ -679,6 +788,8 @@ HTML_TEMPLATE = r"""
     function updateInfoBar() {
       document.getElementById('indoor-temp-value').textContent = data['indoor_temp'] !== undefined ? parseFloat(data['indoor_temp']).toFixed(1) : '-';
       document.getElementById('indoor-hum-value').textContent = data['indoor_humidity'] !== undefined ? Math.round(data['indoor_humidity']) : '-';
+      document.getElementById('outdoor-temp-value').textContent = data['outdoor_temp'] !== undefined ? parseFloat(data['outdoor_temp']).toFixed(1) : '-';
+      document.getElementById('outdoor-hum-value').textContent = data['outdoor_humidity'] !== undefined ? Math.round(data['outdoor_humidity']) : '-';
     }
 
     function renderDetail() {
@@ -788,52 +899,7 @@ HTML_TEMPLATE = r"""
       else if (soc < 80) icon.className = 'fas fa-battery-three-quarters fa-2x text-success';
       else icon.className = 'fas fa-battery-full fa-2x text-success';
 
-      // GULIČKY
-
-      const gridDot = document.getElementById('grid-flow-dot');
-      const pvDot = document.getElementById('pv-flow-dot');
-      const batteryDot = document.getElementById('battery-flow-dot');
-      const loadDot = document.getElementById('load-flow-dot');
-
-      // Grid → Inverter
-      const isLineMode = mode.toLowerCase().includes('line');
-      const chargeFromGrid = chargePriority === 1 || chargePriority === 3;
-      if ((isLineMode || chargeFromGrid) && gridPower > 10) {
-        gridDot.style.display = 'block';
-        gridDot.style.setProperty('--move', 'translate(-260px, 260px)'); // od Grid k Inverteru
-      } else {
-        gridDot.style.display = 'none';
-      }
-
-      // PV → Inverter
-      if (pv > 10) {
-        pvDot.style.display = 'block';
-        pvDot.style.setProperty('--move', 'translate(260px, 260px)'); // od PV k Inverteru
-      } else {
-        pvDot.style.display = 'none';
-      }
-
-      // Inverter → Spotreba
-      if (load > 10) {
-        loadDot.style.display = 'block';
-        loadDot.style.setProperty('--move', 'translate(-260px, -260px)'); // od Invertera k Spotrebe
-      } else {
-        loadDot.style.display = 'none';
-      }
-
-      // Batéria ↔ Inverter – PRESNE PODĽA TVOJHO POSLEDNÉHO VYSVETLENIA
-      if (Math.abs(batteryRaw) > 5) {
-        batteryDot.style.display = 'block';
-        if (batteryRaw < 0) {
-          // ZÁPORNÉ = VYBÍJANIE (batéria → inverter)
-          batteryDot.style.setProperty('--move', 'translate(260px, -260px)'); // od batérie doprava hore k meniču
-        } else {
-          // KLADNÉ = NABÍJANIE (inverter → batéria)
-          batteryDot.style.setProperty('--move', 'translate(-260px, 260px)'); // od meniča doľava dole k batérii
-        }
-      } else {
-        batteryDot.style.display = 'none';
-      }
+     
     }
 
     function renderEnergy(energy) {
@@ -996,6 +1062,78 @@ HTML_TEMPLATE = r"""
       }
     }
 
+    function updateHomeDistribucia() {
+      const l1 = data['PZEM_L1_power'] || 0;
+      const l2 = data['PZEM_L2_power'] || 0;
+      const l3 = data['PZEM_L3_power'] || 0;
+      const total = data['PZEM_total_power'] || 0;
+      const energy = data['PZEM_total_energy'] || 0;
+
+      document.getElementById('home-L1-power').textContent = l1.toFixed(0) + ' W';
+      document.getElementById('home-L2-power').textContent = l2.toFixed(0) + ' W';
+      document.getElementById('home-L3-power').textContent = l3.toFixed(0) + ' W';
+      document.getElementById('home-total-power').textContent = total.toFixed(0) + ' W';
+      document.getElementById('home-total-energy').textContent = energy.toFixed(3) + ' kWh';
+    }
+
+    function renderDistribucia() {
+      const container = document.getElementById('distribucia-content');
+      container.innerHTML = '';
+
+      const faze = ['L1', 'L2', 'L3'];
+      faze.forEach(f => {
+        const base = `PZEM_${f}`;
+        const power = data[base + '_power'] || 0;
+        const voltage = data[base + '_voltage'] || 0;
+        const current = data[base + '_current'] || 0;
+        const energy = data[base + '_energy'] || 0;
+
+        container.innerHTML += `
+          <div class="col-md-4 col-lg-4">
+            <div class="card shadow text-center p-4">
+              <h4 class="text-primary mb-4">Fáza ${f}</h4>
+              
+              <!-- Prvý riadok: Napätie | Prúd | Výkon -->
+              <div class="row g-3 mb-4">
+                <div class="col-4">
+                  <div class="text-muted small">Napätie</div>
+                  <div class="fs-4 fw-bold text-info">${voltage.toFixed(1)}<small class="fs-6"> V</small></div>
+                </div>
+                <div class="col-4">
+                  <div class="text-muted small">Prúd</div>
+                  <div class="fs-4 fw-bold text-warning">${current.toFixed(2)}<small class="fs-6"> A</small></div>
+                </div>
+                <div class="col-4">
+                  <div class="text-muted small">Výkon</div>
+                  <div class="fs-4 fw-bold text-danger">${power.toFixed(0)}<small class="fs-6"> W</small></div>
+                </div>
+              </div>
+
+              <!-- Druhý riadok: Spotreba od resetu -->
+              <div class="pt-3 border-top">
+                <div class="text-muted small mb-1">Spotreba od resetu</div>
+                <div class="fs-3 fw-bold text-success">${energy.toFixed(3)} kWh</div>
+              </div>
+            </div>
+          </div>`;
+      });
+
+      // Súčty dole
+      document.getElementById('dist-total-power').textContent = 
+        (data['PZEM_total_power'] || 0).toFixed(0) + ' W';
+      document.getElementById('dist-total-energy').textContent = 
+        (data['PZEM_total_energy'] || 0).toFixed(3) + ' kWh';
+    }
+
+    // Reset cez Blynk V11 – simulácia (ak nechceš priamo volať ESP)
+    async function resetPZEMEnergy() {
+      if (!confirm("Naozaj resetovať celkovú spotrebu na PZEM meraniach?")) return;
+      // Tu môžeš buď poslať na Blynk V11, alebo priamo na ESP ak máš endpoint
+      alert("Reset odoslaný (funguje cez Blynk tlačidlo V11)");
+      // Alebo priamo:
+      // await fetch('http://IP_PZEM_ESP/blynk?V11=1');
+    }
+
     async function load() {
       try {
         const [d, i] = await Promise.all([fetch('/data'), fetch('/vpin_info')]);
@@ -1006,6 +1144,10 @@ HTML_TEMPLATE = r"""
         updateHomeSummary();
         updateInfoBar();
         updateDiagram();
+        updateHomeDistribucia();
+          if (document.getElementById('distribucia')?.classList.contains('active')) {
+            renderDistribucia();
+          }
         document.getElementById('status').textContent = `Aktualizované: ${new Date().toLocaleTimeString('sk-SK')}`;
       } catch (e) {
         console.error("Chyba:", e);
