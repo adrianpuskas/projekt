@@ -459,7 +459,7 @@ HTML_TEMPLATE = r"""
         <ul class="nav nav-pills nav-fill shadow rounded bg-dark">
           <li class="nav-item"><a class="nav-link active" href="#" onclick="showSubSection('home')">Home</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showSubSection('detail')">Detail</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" onclick="showSubSection('grafy'); loadToday()">Grafy</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" onclick="showSubSection('grafy')">Grafy</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showSubSection('bms')">BMS</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showSubSection('control')">Ovládanie</a></li>
         </ul>
@@ -853,6 +853,7 @@ HTML_TEMPLATE = r"""
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     const REFRESH = 3000;
+    let lastLoaded = 'today';  // Default pri načítaní stránky: 'today'
     let data = {}, info = {};
     let charts = {};
 
@@ -886,7 +887,16 @@ HTML_TEMPLATE = r"""
       document.getElementById('sub-' + id).classList.add('active');
       document.querySelectorAll('#fotovoltaika .nav-link').forEach(l => l.classList.remove('active'));
       document.querySelector(`#fotovoltaika .nav-link[onclick*="${id}"]`).classList.add('active');
-      if (id === 'grafy') loadToday();
+      if (id === 'grafy') {
+        // Načítaj podľa posledného vybraného rozsahu (bez event, aby sa nezmenil active button)
+        if (lastLoaded === 'today') {
+          loadToday(null);
+        } else if (lastLoaded === 'custom') {
+          loadCustom();
+        } else {
+          loadMinutes(lastLoaded, null);
+        }
+      }
       if (id === 'control') readSettings();
     }
 
@@ -1058,6 +1068,7 @@ HTML_TEMPLATE = r"""
         document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
       }
+      lastLoaded = 'today';  // Pamätaj si tento rozsah
       const res = await fetch('/history/today');
       const h = await res.json();
       renderEnergy(h.energy);
@@ -1065,8 +1076,11 @@ HTML_TEMPLATE = r"""
     }
 
     async function loadMinutes(m, event) {
-      document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
-      event.target.classList.add('active');
+      if (event) {
+        document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
+        event.target.classList.add('active');
+      }
+      lastLoaded = m;  // Pamätaj si tento rozsah (číslo minút)
       const res = await fetch(`/history/${m}`);
       const h = await res.json();
       renderEnergy(h.energy);
@@ -1078,6 +1092,7 @@ HTML_TEMPLATE = r"""
       const to = document.getElementById('date-to').value;
       if (!from || !to) { alert("Vyber oba dátumy"); return; }
       document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
+      lastLoaded = 'custom';  // Pamätaj si custom
       const res = await fetch(`/history/custom?start=${from}&end=${to}`);
       const h = await res.json();
       renderEnergy(h.energy);
