@@ -478,13 +478,13 @@ HTML_TEMPLATE = r"""
             </div>
 
             <div class="component" style="top: 5%; left: 5%;">
-              <div class="small fw-bold mb-1">Grid</div>
+              <div class="small fw-bold mb-1">Distribúcia</div>
               <div id="grid-voltage" class="fs-4 text-warning">-</div>
               <i class="fas fa-plug fa-2x text-warning mt-2"></i>
             </div>
 
             <div class="component" style="top: 5%; right: 5%;">
-              <div class="small fw-bold mb-1">PV</div>
+              <div class="small fw-bold mb-1">Solar</div>
               <div id="pv-power" class="fs-4 text-warning">0 W</div>
               <i class="fas fa-solar-panel fa-2x text-warning mt-2"></i>
             </div>
