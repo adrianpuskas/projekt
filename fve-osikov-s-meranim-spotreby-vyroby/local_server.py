@@ -264,21 +264,23 @@ HTML_TEMPLATE = r"""
     /* DIAGRAM – LEN GULIČKY, LEPŠIE NA MOBILE, MENŠÍ BLESK */
     .diagram-container { position: relative; width: 100%; max-width: 900px; height: 80vh; min-height: 600px; margin: 0 auto; }
     .inverter-center {
-      position: absolute;
+      position: absolute;       /* alebo fixed, ak má byť vždy na obrazovke */
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 180px;           /* trocha širší ako vysoký – vyzerá lepšie ako obdĺžnik */
+      width: 180px;
       height: 220px;
-      background: rgba(13, 202, 240, 0.25);   /* trocha jemnejší priehľadný podklad */
-      border: 6px solid var(--primary);      /* o niečo tenší okraj */
-      border-radius: 20px;                   /* zaoblené rohy – 20px je pekné, moderné */
+      background: rgba(255, 255, 255, 0.25); /* jemné priehľadné */
+      backdrop-filter: blur(10px);           /* rozmazanie toho, čo je za boxom */
+      border: 3px solid rgba(255, 255, 255, 0.3);  /* jemný okraj */
+      border-radius: 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 40px rgba(13, 202, 240, 0.6);  /* jemnejší tieň */
-      z-index: 10;
-      padding: 10px 0;       /* trocha vnútorného priestoru hore/dole */
+      box-shadow: 0 0 20px rgba(0,0,0,0.2);       /* jemný tieň */
+      z-index: 9999;        /* veľmi vysoký – úplne vpredu */
+      padding: 10px 0;
+      overflow: hidden;
     }
 
     .inverter-center i { font-size: 2.5rem; color: var(--primary); }
@@ -291,7 +293,7 @@ HTML_TEMPLATE = r"""
       padding: 22px;
       border-radius: 30px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-      z-index: 5;
+      z-index: 15;  /* DOPLNENÉ: Vyššie ako flow-svg (1), ale nižšie ako inverter (20) */
     }
     
     .flow-dot {
@@ -303,6 +305,89 @@ HTML_TEMPLATE = r"""
       animation: flow 3s linear infinite;
       display: none;
       z-index: 3;
+    }
+
+    /* NOVÉ STATICKÉ TOKY ENERGIE */
+    .flow-line {
+      position: absolute;
+      width: 8px;
+      height: 100px;
+      background: gray;
+      border-radius: 4px;
+      opacity: 0.3;
+      transition: all 0.4s ease;
+      z-index: 4;
+      pointer-events: none !important;  /* ← TOTO JE KĽÚČOVÉ */
+    }
+
+    .flow-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;  /* ZNÍŽENÉ: Úplne za všetkými komponentami a inverterom */
+    }
+
+    .flow-svg path {
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* Animácia pulzu pre aktívne toky */
+    .flow-active {
+      animation: pulse-line 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse-line {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+
+    /* Základné stavy */
+    .flow-off { opacity: 0.2; background: #666; filter: grayscale(1); }
+    .flow-active { animation: pulse 2s infinite ease-in-out; }
+
+    /* Smery a farby */
+    .flow-in      { background: #00bcd4; }  /* modrá - príchod do invertera */
+    .flow-out     { background: #4caf50; }  /* zelená - odchod z invertera */
+    .flow-charge  { background: #4caf50; }  /* zelená - nabíjanie */
+    .flow-discharge { background: #ff9800; } /* oranžová - vybíjanie */
+    .flow-import  { background: #2196f3; }  /* modrá - import zo siete */
+    .flow-export  { background: #f44336; }  /* červená - export do siete */
+
+    /* Pulzujúca animácia pre aktívny tok */
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; transform: scaleY(1); }
+      50% { opacity: 1; transform: scaleY(1.1); }
+    }
+
+    /* POZÍCIE LINIEK - prispôsob podľa tvojho layoutu */
+    #flow-pv { 
+      top: 20%; right: 20%; 
+      transform: translateY(-50%) rotate(90deg); 
+      height: 140px; 
+    }
+    #flow-grid { 
+      top: 20%; left: 20%; 
+      transform: translateY(-50%) rotate(90deg); 
+      height: 140px; 
+    }
+    #flow-battery { 
+      bottom: 30%; left: 50%; 
+      transform: translateX(-50%); 
+      height: 100px; 
+    }
+    #flow-load { 
+      bottom: 30%; right: 50%; 
+      transform: translateX(50%); 
+      height: 100px; 
+    }
+
+    @media (max-width: 768px) {
+      .flow-line { width: 6px; height: 80px; }
+      #flow-pv, #flow-grid { height: 90px; }
+      #flow-battery, #flow-load { height: 70px; }
     }
 
     /* Jemný hover pre celú skupinu tlačidiel */
@@ -469,14 +554,14 @@ HTML_TEMPLATE = r"""
         <div class="container py-4">
           <h2 class="text-center mb-5 text-primary fw-bold ">Prehľad systému</h2>
           <div class="diagram-container">
-
             <div class="inverter-center">
               <i class="fas fa-bolt"></i>
               <div class="mt-2 small">Inverter mode</div>
-              <div class="mt-1 small text-primary fw-bold" id="inverter-mode">-</div>
-              <div class="fw-bold fs-3 mt-1" id="inverter-temp">-</div>
+              <div class="mt-1 small text-primary fw-bold" id="inverter-mode">Battery</div>
+              <div class="fw-bold fs-3 mt-1" id="inverter-temp">45 °C</div>
             </div>
 
+            <!-- Najprv všetky komponenty -->
             <div class="component" style="top: 5%; left: 5%;">
               <div class="small fw-bold mb-1">Distribúcia</div>
               <div id="grid-voltage" class="fs-4 text-warning">-</div>
@@ -502,11 +587,13 @@ HTML_TEMPLATE = r"""
               <i class="fas fa-home fa-2x text-info mt-2"></i>
             </div>
 
-            <div id="grid-flow-dot" class="flow-dot" style="top: calc(50% - 10px); left: calc(50% - 10px);"></div>
-            <div id="pv-flow-dot" class="flow-dot" style="top: calc(50% - 10px); left: calc(50% - 10px);"></div>
-            <div id="battery-flow-dot" class="flow-dot" style="top: calc(50% - 10px); left: calc(50% - 10px);"></div>
-            <div id="load-flow-dot" class="flow-dot" style="top: calc(50% - 10px); left: calc(50% - 10px);"></div>
-
+            <!-- A AŽ POTOM flow-line linky -->
+            <svg class="flow-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+              <path id="flow-pv-path" d="" stroke="gray" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+              <path id="flow-grid-path" d="" stroke="gray" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+              <path id="flow-battery-path" d="" stroke="gray" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+              <path id="flow-load-path" d="" stroke="gray" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+            </svg>
           </div>
 
           <!-- Rýchle prepnutie priority výstupu -->
@@ -890,6 +977,7 @@ HTML_TEMPLATE = r"""
     let data = {}, info = {};
     let charts = {};
 
+  
     const themeToggle = document.getElementById('theme-toggle');
     const htmlEl = document.documentElement;
 
@@ -1034,27 +1122,22 @@ HTML_TEMPLATE = r"""
       const pv = parseFloat(data['V76']) || 0;
       const load = parseFloat(data['V65']) || 0;
       const batteryRaw = parseFloat(data['V75']) || 0;
-      const gridPower = Math.abs(parseFloat(data['V15']) || 0);
       const soc = parseFloat(data['V70']) || 0;
-      const mode = data['V1'] || '';
       const chargePriority = parseInt(data['V95']) || 0;
 
       // Texty v diagrame
       document.getElementById('pv-power').textContent = pv > 0 ? pv.toFixed(0) + ' W' : '0 W';
       document.getElementById('load-power').textContent = load > 0 ? load.toFixed(0) + ' W' : '0 W';
-      document.getElementById('battery-power').textContent = Math.abs(batteryRaw) > 0 ? (batteryRaw >= 0 ? '+' : '') + batteryRaw.toFixed(0) + ' W' : '0 W';
+      document.getElementById('battery-power').textContent =
+        Math.abs(batteryRaw) > 0
+          ? (batteryRaw >= 0 ? '+' : '') + batteryRaw.toFixed(0) + ' W'
+          : '0 W';
       document.getElementById('battery-soc').textContent = soc.toFixed(0) + ' %';
       document.getElementById('grid-voltage').textContent = data['V60'] ? data['V60'] + ' V' : '-';
       document.getElementById('inverter-temp').textContent = data['V71'] ? data['V71'] + ' °C' : '-';
 
-      // Zobrazenie režimu meniča
+      // Zobrazenie režimu meniča – TENTO RIADOK NASTAVUJE TEXT!
       document.getElementById('inverter-mode').textContent = data['V1'] || '-';
-
-      // Home summary
-      document.getElementById('home-V65').textContent = load > 0 ? load.toFixed(0) + ' W' : '-';
-      document.getElementById('home-V76').textContent = pv > 0 ? pv.toFixed(0) + ' W' : '-';
-      document.getElementById('home-V75').textContent = batteryRaw !== 0 ? (batteryRaw > 0 ? '+' : '') + batteryRaw.toFixed(0) + ' W' : '-';
-      document.getElementById('home-V70').textContent = soc.toFixed(0) + ' %';
 
       // Ikona batérie
       const icon = document.getElementById('battery-icon');
@@ -1064,7 +1147,147 @@ HTML_TEMPLATE = r"""
       else if (soc < 80) icon.className = 'fas fa-battery-three-quarters fa-2x text-success';
       else icon.className = 'fas fa-battery-full fa-2x text-success';
 
-     
+      /* ===== SVG TOKY ENERGIE - PRESNÉ, RESPONSÍVNE, S LOGIKOU ===== */
+      const FLOW_THRESHOLD = 10;
+
+      function setFlowPath(id, active, color) {
+        const path = document.getElementById(id);
+        if (!path) return;
+
+        if (active) {
+          path.classList.add('flow-active');
+          path.setAttribute('stroke', color);
+          path.setAttribute('stroke-width', '1');
+        } else {
+          path.classList.remove('flow-active');
+          path.setAttribute('stroke', '#444');
+          path.setAttribute('stroke-width', '0.6');
+        }
+      }
+
+      function updateFlowPositions() {
+        const container = document.querySelector('.diagram-container');
+        if (!container) return;
+        const inverter = document.querySelector('.inverter-center');
+        const solarComp = document.querySelector('.component[style*="right: 5%"][style*="top: 5%"]'); // Solar
+        const gridComp = document.querySelector('.component[style*="left: 5%"][style*="top: 5%"]'); // Distribúcia
+        const batteryComp = document.querySelector('.component[style*="left: 5%"][style*="bottom: 5%"]'); // Batéria
+        const loadComp = document.querySelector('.component[style*="right: 5%"][style*="bottom: 5%"]'); // Spotreba
+
+        if (!inverter) return;
+
+        const contRect = container.getBoundingClientRect();
+        const invRect = inverter.getBoundingClientRect();
+
+        // Stred invertera (pre PV a Grid zhora)
+        const invCenterX = (invRect.left + invRect.width / 2 - contRect.left) / contRect.width * 100;
+        const invCenterY = (invRect.top + invRect.height / 2 - contRect.top) / contRect.height * 100;
+
+        // Okraje invertera – kam majú čiary mieriť
+        const invTop = (invRect.top + 15 - contRect.top) / contRect.height * 100;        // trochu dole od vrchu
+        const invBottom = (invRect.bottom - 15 - contRect.top) / contRect.height * 100;  // trochu hore od spodku
+
+        function getComponentTopCenter(el) {
+          if (!el) return { x: 50, y: 90 };
+          const rect = el.getBoundingClientRect();
+          return {
+            x: (rect.left + rect.width / 2 - contRect.left) / contRect.width * 100,
+            y: (rect.top - contRect.top) / contRect.height * 100   // horný okraj komponentu!
+          };
+        }
+
+        function getComponentBottomCenter(el) {
+          if (!el) return { x: 50, y: 10 };
+          const rect = el.getBoundingClientRect();
+          return {
+            x: (rect.left + rect.width / 2 - contRect.left) / contRect.width * 100,
+            y: (rect.bottom - contRect.top) / contRect.height * 100  // spodný okraj
+          };
+        }
+
+        const solarPos = getComponentBottomCenter(solarComp);  // PV zhora → spodok komponentu
+        const gridPos = getComponentBottomCenter(gridComp);    // Grid zhora → spodok komponentu
+        const batteryPos = getComponentTopCenter(batteryComp); // Batéria zdola → horný okraj!
+        const loadPos = getComponentTopCenter(loadComp);       // Spotreba zdola → horný okraj!
+
+        // PV → Inverter (zhora dole)
+        document.getElementById('flow-pv-path').setAttribute('d',
+          `M ${solarPos.x} ${solarPos.y} L ${solarPos.x} ${invTop + 5} L ${invCenterX} ${invTop + 5}`
+        );
+
+        // Grid → Inverter (zhora dole)
+        document.getElementById('flow-grid-path').setAttribute('d',
+          `M ${gridPos.x} ${gridPos.y} L ${gridPos.x} ${invTop + 5} L ${invCenterX} ${invTop + 5}`
+        );
+
+        // Batéria → Inverter (zdola nahor) – štartuje z hornej hrany batérie
+        document.getElementById('flow-battery-path').setAttribute('d',
+          `M ${batteryPos.x} ${batteryPos.y} L ${batteryPos.x} ${invBottom - 5} L ${invCenterX} ${invBottom - 5}`
+        );
+
+        // Inverter → Spotreba (zdola nahor do spotreby)
+        document.getElementById('flow-load-path').setAttribute('d',
+          `M ${invCenterX} ${invBottom - 5} L ${loadPos.x} ${invBottom - 5} L ${loadPos.x} ${loadPos.y}`
+        );
+      }
+
+      // Aktualizuj pozície čiar
+      updateFlowPositions();
+
+      // Teraz čítaj mode z DOM pre logiku farieb (po nastavení)
+      const modeElement = document.getElementById('inverter-mode');
+      const mode = modeElement ? modeElement.textContent.trim() : '';
+
+      // Pre debug (môžeš odkomentovať pre testovanie)
+      // console.log('Nastavený mode z dát:', data['V1']);
+      // console.log('Čítaný mode z DOM:', mode);
+
+      // === LOGIKA FARIEB A AKTIVITY TOKOV ===
+      const pvPower = pv;
+      const batteryPower = batteryRaw; // >0 = nabíjanie, <0 = vybíjanie
+      const loadPower = load;
+
+      // 1. PV čiara (Solar → Inverter)
+      const pvActive = pvPower > FLOW_THRESHOLD;
+      setFlowPath('flow-pv-path', pvActive, '#00ff00'); // vždy zelená, ak ide výkon zo solaru
+
+      // 2. Grid čiara (Distribúcia → Inverter)
+      const gridActive = mode === 'Line';
+      setFlowPath('flow-grid-path', gridActive, '#2196f3'); // modrá, len ak je režim Line
+
+      // 3. Batéria čiara (Batéria ↔ Inverter)
+      const batteryActive = Math.abs(batteryPower) > FLOW_THRESHOLD;
+      let batteryColor = '#666';
+      if (batteryActive) {
+        batteryColor = batteryPower > 0 ? '#4caf50' : '#f44336'; // zelená = nabíjanie, červená = vybíjanie
+      }
+      setFlowPath('flow-battery-path', batteryActive, batteryColor);
+
+      // 4. Spotreba čiara (Inverter → Spotreba)
+      const loadActive = loadPower > FLOW_THRESHOLD;
+      let loadColor = '#666';
+
+      if (loadActive) {
+        if (mode === 'Line') {
+          loadColor = '#2196f3'; // modrá – ide zo siete
+        } else {
+          // Priorita: Solar > Batéria
+          const solarToLoad = Math.min(pvPower, loadPower);
+          const batteryToLoad = loadPower - solarToLoad;
+
+          if (solarToLoad > Math.abs(batteryToLoad) + 10) {
+            loadColor = '#00ff00'; // prevažne zo solaru → zelená
+          } else if (Math.abs(batteryToLoad) > solarToLoad + 10) {
+            loadColor = '#f44336'; // prevažne z batérie → červená
+          } else {
+            loadColor = '#ffeb3b'; // zmiešané → žltá
+          }
+        }
+      }
+      setFlowPath('flow-load-path', loadActive, loadColor);
+      // console.log('Load color:', loadColor, 'Mode:', mode);  // Debug
+
+      // Koniec hlavnej funkcie updateDiagram()
     }
 
     function renderEnergy(energy) {
