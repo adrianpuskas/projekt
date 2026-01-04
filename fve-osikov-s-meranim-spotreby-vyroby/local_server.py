@@ -283,7 +283,12 @@ HTML_TEMPLATE = r"""
       overflow: hidden;
     }
 
-    .inverter-center i { font-size: 2.5rem; color: var(--primary); }
+    .inverter-center i {
+      font-size: 2.5rem;
+      color: #666; /* Default šedá, keď nič netečie */
+      transition: color 0.5s ease; /* Plynulý prechod farby pre lepší UX */
+    }
+
     .component {
       position: absolute;
       width: 150px;
@@ -557,7 +562,7 @@ HTML_TEMPLATE = r"""
             <div class="inverter-center">
               <i class="fas fa-bolt"></i>
               <div class="mt-2 small">Inverter mode</div>
-              <div class="mt-1 small text-primary fw-bold" id="inverter-mode">Battery</div>
+              <div class="text-primary fw-bold" id="inverter-mode">Battery</div>
               <div class="fw-bold fs-3 mt-1" id="inverter-temp">45 °C</div>
             </div>
 
@@ -1286,6 +1291,15 @@ HTML_TEMPLATE = r"""
       }
       setFlowPath('flow-load-path', loadActive, loadColor);
       // console.log('Load color:', loadColor, 'Mode:', mode);  // Debug
+
+
+      // Dynamická farba ikony blesku podľa toku do spotreby
+      const boltIcon = document.querySelector('.inverter-center i');
+      if (loadActive) {
+        boltIcon.style.color = loadColor;  // Rovnaká farba ako load čiara (modrá pri Line, zelená pri solare, atď.)
+      } else {
+        boltIcon.style.color = '#666';     // Šedá, keď nič netečie (žiadna spotreba)
+      }
 
       // Koniec hlavnej funkcie updateDiagram()
     }
