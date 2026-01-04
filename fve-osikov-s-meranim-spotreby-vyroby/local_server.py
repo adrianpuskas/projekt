@@ -281,7 +281,7 @@ HTML_TEMPLATE = r"""
       padding: 10px 0;       /* trocha vnútorného priestoru hore/dole */
     }
 
-    .inverter-center i { font-size: 1rem; color: var(--primary); }
+    .inverter-center i { font-size: 2.5rem; color: var(--primary); }
     .component {
       position: absolute;
       width: 150px;
@@ -360,7 +360,7 @@ HTML_TEMPLATE = r"""
     @keyframes flow { 0% { transform: translate(0, 0); } 100% { transform: var(--move); } }
     @media (max-width: 768px) {
       .diagram-container { height: 75vh; min-height: 560px; }
-      .inverter-center { width: 130px; height: 130px; }
+      .inverter-center { width: 130px; height: 180px; }
       .inverter-center i { font-size: 3.6rem; }
       .component { width: 125px; padding: 16px; }
       .flow-dot { width: 16px; height: 16px; }
@@ -406,14 +406,14 @@ HTML_TEMPLATE = r"""
             <div class="col-9">
               <div class="row g-3 mb-4">
                 <div class="col-6"><div class="text-muted small">Spotreba domu</div><div class="fs-4 fw-bold text-info" id="home-V65">-</div></div>
-                <div class="col-6"><div class="text-muted small">Výkon PV</div><div class="fs-4 fw-bold text-warning" id="home-V76">-</div></div>
+                <div class="col-6"><div class="text-muted small">Solar výkon</div><div class="fs-4 fw-bold text-warning" id="home-V76">-</div></div>
                 <div class="col-6"><div class="text-muted small">Batéria +/-</div><div class="fs-4 fw-bold text-primary" id="home-V75">-</div></div>
-                <div class="col-6"><div class="text-muted small">SOC</div><div class="fs-4 fw-bold text-success" id="home-V70">-</div></div>
+                <div class="col-6"><div class="text-muted small">Nabitá na</div><div class="fs-4 fw-bold text-success" id="home-V70">-</div></div>
               </div>
               <div class="inverter-info">
                 <div class="row g-2">
-                  <div class="col-6 d-flex align-items-center"><i class="fas fa-cog me-2"></i> Režim: <strong id="home-mode-value" class="ms-1">-</strong></div>
-                  <div class="col-6 d-flex align-items-center"><i class="fas fa-thermometer-half me-2"></i> Menič: <strong id="home-temp-value" class="ms-1">-</strong>°C</div>
+                  <div class="col-6 d-flex align-items-center"><i class="fas fa-cog me-2"></i><strong id="home-mode-value" class="ms-1">-</strong></div>
+                  <div class="col-6 d-flex align-items-center"><i class="fas fa-thermometer-half me-2"></i> Inv.: <strong id="home-temp-value" class="ms-1">-</strong>°C</div>
                 </div>
               </div>
             </div>
@@ -443,7 +443,7 @@ HTML_TEMPLATE = r"""
                 <div class="col-6"><div class="text-muted small">Výkon L3</div><div class="fs-4 fw-bold text-warning" id="home-L3-power">-</div></div>
                 <div class="col-6"><div class="text-muted small">Celkový výkon</div><div class="fs-4 fw-bold text-info" id="home-total-power">-</div></div>
               </div>
-              <div class="text-muted small">Celková spotreba: <strong id="home-total-energy">-</strong> kWh</div>
+              <div class="text-muted small">Celková spotreba: <strong id="home-total-energy">-</strong></div>
             </div>
           </div>
         </div>
@@ -472,8 +472,9 @@ HTML_TEMPLATE = r"""
 
             <div class="inverter-center">
               <i class="fas fa-bolt"></i>
-              <div class="mt-2 small">Inverter</div>
-              <div class="fw-bold fs-3" id="inverter-temp">-</div>
+              <div class="mt-2 small">Inverter mode</div>
+              <div class="mt-1 small text-primary fw-bold" id="inverter-mode">-</div>
+              <div class="fw-bold fs-3 mt-1" id="inverter-temp">-</div>
             </div>
 
             <div class="component" style="top: 5%; left: 5%;">
@@ -507,6 +508,38 @@ HTML_TEMPLATE = r"""
             <div id="load-flow-dot" class="flow-dot" style="top: calc(50% - 10px); left: calc(50% - 10px);"></div>
 
           </div>
+
+          <!-- Rýchle prepnutie priority výstupu -->
+          <div class="mt-5">
+            <h4 class="text-center text-primary mb-4 fw-bold">Rýchle prepnutie priority výstupu</h4>
+            <div class="row g-3 justify-content-center">
+              <div class="col-12 col-sm-4">
+                <button class="btn btn-outline-warning w-100 shadow-sm rounded-pill fw-bold" 
+                        onclick="quickSetPriority(0)">
+                  <i class="fas fa-plug-circle-bolt me-2"></i>
+                  Distribúcia<br><small>(Utility First)</small>
+                </button>
+              </div>
+              <div class="col-12 col-sm-4">
+                <button class="btn btn-outline-success w-100 shadow-sm rounded-pill fw-bold" 
+                        onclick="quickSetPriority(1)">
+                  <i class="fas fa-solar-panel me-2"></i>
+                  Solar<br><small>(Solar First)</small>
+                </button>
+              </div>
+              <div class="col-12 col-sm-4">
+                <button class="btn btn-outline-info w-100 shadow-sm rounded-pill fw-bold" 
+                        onclick="quickSetPriority(2)">
+                  <i class="fas fa-battery-full me-2"></i>
+                  Batéria<br><small>(SBU Priority)</small>
+                </button>
+              </div>
+            </div>
+            <div class="text-center mt-3 text-muted small">
+              Okamžitá zmena priority výstupu meniča
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -677,7 +710,7 @@ HTML_TEMPLATE = r"""
                 </div>
 
                 <div class="mt-4 text-center text-muted small opacity-75">
-                  Ovládanie cez JK-BMS (relé)
+                  Ovládanie batériového modulu Jikong JK-BMS
                 </div>
               </div>
             </div>
@@ -1014,6 +1047,9 @@ HTML_TEMPLATE = r"""
       document.getElementById('grid-voltage').textContent = data['V60'] ? data['V60'] + ' V' : '-';
       document.getElementById('inverter-temp').textContent = data['V71'] ? data['V71'] + ' °C' : '-';
 
+      // Zobrazenie režimu meniča
+      document.getElementById('inverter-mode').textContent = data['V1'] || '-';
+
       // Home summary
       document.getElementById('home-V65').textContent = load > 0 ? load.toFixed(0) + ' W' : '-';
       document.getElementById('home-V76').textContent = pv > 0 ? pv.toFixed(0) + ' W' : '-';
@@ -1148,6 +1184,41 @@ HTML_TEMPLATE = r"""
       } catch (e) {
         alert("✗ Chyba spojenia s Main.py (port 8002)");
       }
+    }
+
+    async function quickSetPriority(value) {
+      // Vizálne označenie, že sa niečo deje
+      const buttons = document.querySelectorAll('#sub-home button[onclick^="quickSetPriority"]');
+      buttons.forEach(b => b.disabled = true);
+
+      const settings = {
+        v94: parseInt(value)
+      };
+
+      try {
+        const res = await fetch('http://192.168.3.84:8002/control/write_settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(settings)
+        });
+        const json = await res.json();
+
+        if (json.status === "success") {
+          // Krátky feedback
+          document.getElementById('status').textContent = `Priority zmenená: ${value === 0 ? 'Distribúcia' : value === 1 ? 'Solar' : 'Batéria'} ✓`;
+          // Aktualizujeme lokálne dáta (ak máme V1 alebo iný indikátor režimu)
+          data['V94'] = value;
+        } else {
+          document.getElementById('status').textContent = '✗ Chyba pri zmene priority';
+        }
+      } catch (e) {
+        document.getElementById('status').textContent = '✗ Spojenie s Main.py zlyhalo';
+      }
+
+      // Po chvíli povolíme tlačidlá späť
+      setTimeout(() => {
+        buttons.forEach(b => b.disabled = false);
+      }, 2000);
     }
 
     async function writeSettings() {
