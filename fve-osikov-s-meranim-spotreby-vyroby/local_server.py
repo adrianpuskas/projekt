@@ -396,6 +396,13 @@ HTML_TEMPLATE = r"""
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
     }
 
+
+    #grid-power, #grid-energy {
+      white-space: pre-line; /* Umožní zobrazenie \n ako nový riadok */
+      line-height: 1.2; /* Voliteľne: lepší odstup riadkov */
+    }
+
+
     @media (max-width: 768px) {
       .diagram-container { height: 75vh; min-height: 560px; }
       .inverter-center { width: 130px; height: 180px; }
@@ -521,7 +528,8 @@ HTML_TEMPLATE = r"""
               <a class="nav-link" href="#" onclick="showMainSection('distribucia')">
                 <div class="small fw-bold mb-1">Distribúcia</div>
                 <div id="grid-voltage" class="fs-4 text-warning">-</div>
-                <i class="fas fa-plug fa-2x text-warning mt-2"></i>
+                <div id="grid-power" class="small text-muted mt-1">0 W-DS</div>
+                <div id="grid-energy" class="small text-muted mt-1">0 kWh (od resetu)</div>                
               </a>
             </div>
 
@@ -1099,6 +1107,11 @@ HTML_TEMPLATE = r"""
       document.getElementById('battery-soc').textContent = soc.toFixed(0) + ' %';
       document.getElementById('grid-voltage').textContent = data['V60'] ? data['V60'] + ' V' : '-';
       document.getElementById('inverter-temp').textContent = data['V71'] ? data['V71'] + ' °C' : '-';
+
+      // Doplnene pre zobrazenie PZEM vykonu na Home stranke
+      const totalPower = data['PZEM_total_power'] || 0;
+      document.getElementById('grid-power').textContent = data['PZEM_total_power'] ? data['PZEM_total_power'] + ' W' : '-';
+      document.getElementById('grid-energy').textContent = data['PZEM_total_energy'] ? data['PZEM_total_energy'].toFixed(2) + ' kWh\n(od resetu)' : '0 kWh\n(od resetu)';
 
       // Zobrazenie režimu meniča – TENTO RIADOK NASTAVUJE TEXT!
       document.getElementById('inverter-mode').textContent = data['V1'] || '-';
