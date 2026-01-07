@@ -10,16 +10,6 @@ import os
 
 app = Flask(__name__)
 
-KEY_METRICS = {
-    "V76": ("Výkon PV", "fas fa-solar-panel"),
-    "V70": ("SOC batérie", "fas fa-battery-full"),
-    "V65": ("Spotreba domu", "fas fa-home"),
-    "V15": ("Sieť +/-", "fas fa-exchange-alt"),
-    "V4": ("Vonku", "fas fa-thermometer-half"),
-    "V9": ("Teplota TÚV", "fas fa-tint"),
-    "V7": ("Bojler", "fas fa-burn"),
-}
-
 VPINS = {
     "V72": ("PV1 prúd do batérie", "Fotovoltaika", "A", "fas fa-bolt"),
     "V73": ("PV1 napätie", "Fotovoltaika", "V", "fas fa-plug"),
@@ -301,30 +291,6 @@ HTML_TEMPLATE = r"""
       z-index: 15;  /* DOPLNENÉ: Vyššie ako flow-svg (1), ale nižšie ako inverter (20) */
     }
     
-    .flow-dot {
-      position: absolute;
-      width: 20px; height: 20px;
-      background: var(--primary);
-      border-radius: 50%;
-      box-shadow: 0 0 30px var(--primary);
-      animation: flow 3s linear infinite;
-      display: none;
-      z-index: 3;
-    }
-
-    /* NOVÉ STATICKÉ TOKY ENERGIE */
-    .flow-line {
-      position: absolute;
-      width: 8px;
-      height: 100px;
-      background: gray;
-      border-radius: 4px;
-      opacity: 0.3;
-      transition: all 0.4s ease;
-      z-index: 4;
-      pointer-events: none !important;  /* ← TOTO JE KĽÚČOVÉ */
-    }
-
     .flow-svg {
       position: absolute;
       top: 0; left: 0;
@@ -341,58 +307,41 @@ HTML_TEMPLATE = r"""
 
     /* Animácia pulzu pre aktívne toky */
     .flow-active {
-      animation: pulse-line 2s infinite ease-in-out;
+      stroke-dasharray: 10 5; /* Robí dashed line pre flow efekt */
+      animation: flow-dash 2s linear infinite, pulse-line 2s infinite ease-in-out; /* Kombinácia pohybu + pulzu */
+    }
+
+    .flow-reverse {
+      animation: flow-dash-reverse 2s linear infinite, pulse-line 2s infinite ease-in-out !important;
+      /* !important pre override, ak treba */
+    }
+
+    @keyframes flow-dash {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: -15; } /* Hodnota závisí od dĺžky path; uprav podľa potreby (-15 pre krátke dashes) */
+    }
+
+    @keyframes flow-dash-reverse {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: 15; } /* Opačný smer: "od invertora dole" (nabíjanie) – pozitívna hodnota */
     }
 
     @keyframes pulse-line {
       0%, 100% { opacity: 0.6; }
       50% { opacity: 1; }
     }
+    
 
-    /* Základné stavy */
-    .flow-off { opacity: 0.2; background: #666; filter: grayscale(1); }
-    .flow-active { animation: pulse 2s infinite ease-in-out; }
+    @keyframes pulse-line {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
 
-    /* Smery a farby */
-    .flow-in      { background: #00bcd4; }  /* modrá - príchod do invertera */
-    .flow-out     { background: #4caf50; }  /* zelená - odchod z invertera */
-    .flow-charge  { background: #4caf50; }  /* zelená - nabíjanie */
-    .flow-discharge { background: #ff9800; } /* oranžová - vybíjanie */
-    .flow-import  { background: #2196f3; }  /* modrá - import zo siete */
-    .flow-export  { background: #f44336; }  /* červená - export do siete */
 
     /* Pulzujúca animácia pre aktívny tok */
     @keyframes pulse {
       0%, 100% { opacity: 0.6; transform: scaleY(1); }
       50% { opacity: 1; transform: scaleY(1.1); }
-    }
-
-    /* POZÍCIE LINIEK - prispôsob podľa tvojho layoutu */
-    #flow-pv { 
-      top: 20%; right: 20%; 
-      transform: translateY(-50%) rotate(90deg); 
-      height: 140px; 
-    }
-    #flow-grid { 
-      top: 20%; left: 20%; 
-      transform: translateY(-50%) rotate(90deg); 
-      height: 140px; 
-    }
-    #flow-battery { 
-      bottom: 30%; left: 50%; 
-      transform: translateX(-50%); 
-      height: 100px; 
-    }
-    #flow-load { 
-      bottom: 30%; right: 50%; 
-      transform: translateX(50%); 
-      height: 100px; 
-    }
-
-    @media (max-width: 768px) {
-      .flow-line { width: 6px; height: 80px; }
-      #flow-pv, #flow-grid { height: 90px; }
-      #flow-battery, #flow-load { height: 70px; }
     }
 
     /* Jemný hover pre celú skupinu tlačidiel */
@@ -447,7 +396,6 @@ HTML_TEMPLATE = r"""
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
     }
 
-    @keyframes flow { 0% { transform: translate(0, 0); } 100% { transform: var(--move); } }
     @media (max-width: 768px) {
       .diagram-container { height: 75vh; min-height: 560px; }
       .inverter-center { width: 130px; height: 180px; }
@@ -559,37 +507,49 @@ HTML_TEMPLATE = r"""
         <div class="container py-4">
           <h2 class="text-center mb-5 text-primary fw-bold ">Prehľad systému</h2>
           <div class="diagram-container">
-            <div class="inverter-center">
+            <a class="nav-link" href="#" onclick="showSubSection('detail')">
+              <div class="inverter-center">             
               <i class="fas fa-bolt"></i>
               <div class="mt-2 small">Inverter mode</div>
               <div class="text-primary fw-bold" id="inverter-mode">Battery</div>
               <div class="fw-bold fs-3 mt-1" id="inverter-temp">45 °C</div>
-            </div>
+              </div>
+            </a>
 
             <!-- Najprv všetky komponenty -->
             <div class="component" style="top: 5%; left: 5%;">
-              <div class="small fw-bold mb-1">Distribúcia</div>
-              <div id="grid-voltage" class="fs-4 text-warning">-</div>
-              <i class="fas fa-plug fa-2x text-warning mt-2"></i>
+              <a class="nav-link" href="#" onclick="showMainSection('distribucia')">
+                <div class="small fw-bold mb-1">Distribúcia</div>
+                <div id="grid-voltage" class="fs-4 text-warning">-</div>
+                <i class="fas fa-plug fa-2x text-warning mt-2"></i>
+              </a>
             </div>
 
             <div class="component" style="top: 5%; right: 5%;">
-              <div class="small fw-bold mb-1">Solar</div>
-              <div id="pv-power" class="fs-4 text-warning">0 W</div>
-              <i class="fas fa-solar-panel fa-2x text-warning mt-2"></i>
+              <a class="nav-link" href="#" onclick="showSubSection('grafy')">
+                <div class="small fw-bold mb-1">Solar</div>
+                <div id="pv-power" class="fs-4 text-warning">0 W</div>
+                <div id="pv-daily" class="small text-muted mt-1">0 kWh (dnes)</div>
+                <i class="fas fa-solar-panel fa-2x text-warning mt-2"></i>
+              </a>
             </div>
 
             <div class="component" style="bottom: 5%; left: 5%;">
-              <div class="small fw-bold mb-1">Batéria</div>
-              <div id="battery-power" class="fs-4">0 W</div>
-              <div id="battery-soc" class="text-success fs-4 mt-1">-</div>
-              <i id="battery-icon" class="fas fa-battery-full fa-2x text-success mt-2"></i>
+              <a class="nav-link active" href="#" onclick="showSubSection('bms')">
+                <div class="small fw-bold mb-1">Batéria</div>
+                <div id="battery-power" class="fs-4">0 W</div>
+                <div id="battery-soc" class="text-success fs-4 mt-1">-</div>
+                <i id="battery-icon" class="fas fa-battery-full fa-2x text-success mt-2"></i>
+              </a>
             </div>
 
             <div class="component" style="bottom: 5%; right: 5%;">
-              <div class="small fw-bold mb-1">Spotreba</div>
-              <div id="load-power" class="fs-4 text-info">0 W</div>
-              <i class="fas fa-home fa-2x text-info mt-2"></i>
+              <a class="nav-link" href="#" onclick="showSubSection('grafy')">
+                <div class="small fw-bold mb-1">Spotreba</div>
+                <div id="load-power" class="fs-4 text-info">0 W</div>
+                <div id="load-daily" class="small text-muted mt-1">0 kWh (dnes)</div>
+                <i class="fas fa-home fa-2x text-info mt-2"></i>
+              </a>
             </div>
 
             <!-- A AŽ POTOM flow-line linky -->
@@ -1128,7 +1088,6 @@ HTML_TEMPLATE = r"""
       const load = parseFloat(data['V65']) || 0;
       const batteryRaw = parseFloat(data['V75']) || 0;
       const soc = parseFloat(data['V70']) || 0;
-      const chargePriority = parseInt(data['V95']) || 0;
 
       // Texty v diagrame
       document.getElementById('pv-power').textContent = pv > 0 ? pv.toFixed(0) + ' W' : '0 W';
@@ -1264,7 +1223,16 @@ HTML_TEMPLATE = r"""
       const batteryActive = Math.abs(batteryPower) > FLOW_THRESHOLD;
       let batteryColor = '#666';
       if (batteryActive) {
-        batteryColor = batteryPower > 0 ? '#4caf50' : '#f44336'; // zelená = nabíjanie, červená = vybíjanie
+        batteryColor = batteryPower > 0 ? '#00ff00' : '#f44336'; // zelená = nabíjanie, červená = vybíjanie
+      }
+      setFlowPath('flow-battery-path', batteryActive, batteryColor);
+
+      // NOVÉ: Obráť smer animácie pre nabíjanie
+      const batteryPath = document.getElementById('flow-battery-path');
+      if (batteryActive && batteryPower > 0) {  // Nabíjanie: opačný smer
+        batteryPath.classList.add('flow-reverse');
+      } else {
+        batteryPath.classList.remove('flow-reverse');
       }
       setFlowPath('flow-battery-path', batteryActive, batteryColor);
 
@@ -1591,6 +1559,19 @@ HTML_TEMPLATE = r"""
             renderDistribucia();
           }
         document.getElementById('status').textContent = `Aktualizované: ${new Date().toLocaleTimeString('sk-SK')}`;
+
+        fetch('/history/today')
+        .then(res => res.json())
+        .then(h => {
+          document.getElementById('pv-daily').textContent = h.energy.pv.toFixed(2) + ' kWh (dnes)';
+          document.getElementById('load-daily').textContent = `${h.energy.load.toFixed(2)} kWh (dnes)`;
+        })
+        .catch(e => {
+          console.error('Chyba pri načítaní dennej výroby/spotreby:', e);
+          document.getElementById('pv-daily').textContent = '0 kWh (dnes)';
+          document.getElementById('load-daily').textContent = '0 kWh (dnes)';
+        });
+
       } catch (e) {
         console.error("Chyba:", e);
         document.getElementById('status').textContent = 'Chyba pri načítaní dát';
