@@ -7,9 +7,8 @@ from datetime import datetime, timedelta
 import threading
 import sqlite3
 import os
-
+import json
 app = Flask(__name__)
-
 VPINS = {
     "V72": ("PV1 prúd do batérie", "Fotovoltaika", "A", "fas fa-bolt"),
     "V73": ("PV1 napätie", "Fotovoltaika", "V", "fas fa-plug"),
@@ -41,7 +40,6 @@ VPINS = {
     "outdoor_humidity": ("Vlhkosť vonku", "Senzory", "%", "fas fa-tint"),
     "V21": ("Nabíjanie BMS", "BMS", "", "fas fa-plug"),
     "V22": ("Vybíjanie BMS", "BMS", "", "fas fa-bolt"),
-
     # PZEM-004T distribúcia
     "PZEM_L1_voltage": ("Napätie L1", "Distribúcia", "V", "fas fa-bolt"),
     "PZEM_L1_current": ("Prúd L1", "Distribúcia", "A", "fas fa-tachometer-alt"),
@@ -49,28 +47,28 @@ VPINS = {
     "PZEM_L1_energy": ("Energia L1", "Distribúcia", "kWh", "fas fa-battery-full"),
     "PZEM_L1_freq": ("Frekvencia L1", "Distribúcia", "Hz", "fas fa-wave-square"),
     "PZEM_L1_pf": ("PF L1", "Distribúcia", "", "fas fa-percentage"),
-
     "PZEM_L2_voltage": ("Napätie L2", "Distribúcia", "V", "fas fa-bolt"),
     "PZEM_L2_current": ("Prúd L2", "Distribúcia", "A", "fas fa-tachometer-alt"),
     "PZEM_L2_power": ("Výkon L2", "Distribúcia", "W", "fas fa-plug"),
     "PZEM_L2_energy": ("Energia L2", "Distribúcia", "kWh", "fas fa-battery-full"),
-
     "PZEM_L3_voltage": ("Napätie L3", "Distribúcia", "V", "fas fa-bolt"),
     "PZEM_L3_current": ("Prúd L3", "Distribúcia", "A", "fas fa-tachometer-alt"),
     "PZEM_L3_power": ("Výkon L3", "Distribúcia", "W", "fas fa-plug"),
     "PZEM_L3_energy": ("Energia L3", "Distribúcia", "kWh", "fas fa-battery-full"),
-
     "PZEM_total_power": ("Celkový výkon", "Distribúcia", "W", "fas fa-home"),
     "PZEM_total_energy": ("Celková spotreba", "Distribúcia", "kWh", "fas fa-chart-line"),
-
 }
-
-
-
-
 local_data = {}
 data_lock = threading.Lock()
 DB_PATH = "solar_data.db"
+
+def load_configs():
+    if os.path.exists('advanced.json'):
+        with open('advanced.json') as f:
+            return json.load(f)
+    return {}
+
+advanced_configs = load_configs()
 
 def _store_value(key: str, value):
     with data_lock:
@@ -78,18 +76,38 @@ def _store_value(key: str, value):
 
 def _get_snapshot():
     with data_lock:
-        return {k: v["value"] for k, v in local_data.items()}
+        snapshot = {}
+        now = datetime.utcnow()
+        for k, v in local_data.items():
+            try:
+                ts = datetime.fromisoformat(v["ts"])
+                age = (now - ts).total_seconds()
+            except:
+                age = 0
+            config = advanced_configs.get(k, {"action": "keep", "timeout": 30})
+            if config["action"] == "keep" or age <= config.get("timeout", 30):
+                snapshot[k] = v["value"]
+            else:
+                if config["action"] == "to_0":
+                    snapshot[k] = "0"
+                elif config["action"] == "to_dash":
+                    snapshot[k] = "-"
+                elif config["action"] == "to_null":
+                    snapshot[k] = "null"
+                elif config["action"] == "to_default":
+                    snapshot[k] = config.get("default_val", "-")
+        return snapshot
 
 def get_history_and_energy(minutes=1440):
     if not os.path.exists(DB_PATH):
         return {"timestamps": [], "pv": [], "soc": [], "load": [], "grid": [], "energy": {"pv": 0, "load": 0, "charge": 0, "discharge": 0}}
-   
+  
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-   
+  
     end_time = datetime.now()
     start_time = end_time - timedelta(minutes=minutes)
-   
+  
     c.execute("""
         SELECT timestamp, pv_input_power, pv2_input_power, battery_capacity,
                ac_output_power, battery_power
@@ -97,31 +115,31 @@ def get_history_and_energy(minutes=1440):
         WHERE timestamp BETWEEN ? AND ?
         ORDER BY timestamp
     """, (start_time, end_time))
-   
+  
     rows = c.fetchall()
     conn.close()
-   
+  
     if not rows:
         return {"timestamps": [], "pv": [], "soc": [], "load": [], "grid": [], "energy": {"pv": 0, "load": 0, "charge": 0, "discharge": 0}}
-   
+  
     if minutes <= 720:
         timestamps = [r[0][11:16] for r in rows]
     else:
         timestamps = [r[0][5:16] for r in rows]
-   
+  
     pv = [round((float(r[1] or 0) + float(r[2] or 0))) for r in rows]
     soc = [float(r[3] or 0) for r in rows]
     load = [float(r[4] or 0) for r in rows]
     battery_powers = [float(r[5] or 0) for r in rows]
-   
+  
     interval_kwh = 5 / 3600000.0
     pv_kwh = sum(pv) * interval_kwh
     load_kwh = sum(load) * interval_kwh
     charge_kwh = sum(bp for bp in battery_powers if bp > 0) * interval_kwh
     discharge_kwh = sum(-bp for bp in battery_powers if bp < 0) * interval_kwh
-   
+  
     step = max(1, len(rows) // 150)
-   
+  
     return {
         "timestamps": timestamps[::step],
         "pv": pv[::step],
@@ -135,7 +153,6 @@ def get_history_and_energy(minutes=1440):
             "discharge": round(discharge_kwh, 3),
         }
     }
-
 @app.route('/history/today', methods=['GET'])
 def history_today():
     now = datetime.now()
@@ -143,7 +160,6 @@ def history_today():
     end_time = now
     minutes_diff = int((end_time - start_time).total_seconds() / 60)
     return jsonify(get_history_and_energy(minutes_diff))
-
 @app.route('/history/custom', methods=['GET'])
 def history_custom():
     start_str = request.args.get('start')
@@ -157,7 +173,6 @@ def history_custom():
         return jsonify(get_history_and_energy(minutes_diff))
     except:
         return jsonify({"error": "invalid format"}), 400
-
 @app.route('/write', methods=['POST'])
 def write_pin():
     data = request.get_json(silent=True) or {}
@@ -165,67 +180,61 @@ def write_pin():
     value = data.get("value")
     if not key:
         return jsonify({"status": "error", "message": "no key/pin"}), 400
-
     if str(key).startswith("V") or str(key).startswith("v"):
         key = str(key).upper()
         if not key.startswith("V"):
             key = "V" + key
-
     _store_value(key, value)
     return jsonify({"status": "ok", "key": key, "value": value})
-
 @app.route('/data', methods=['GET'])
 def get_data():
     return jsonify(_get_snapshot())
-
 @app.route('/vpin_info', methods=['GET'])
 def vpin_info():
     return jsonify(VPINS)
-
 @app.route('/history/<int:minutes>', methods=['GET'])
 def history_endpoint(minutes):
     valid = {30:30, 60:60, 180:180, 360:360, 720:720, 1440:1440, 10080:10080, 43200:43200}
     minutes = valid.get(minutes, 1440)
     return jsonify(get_history_and_energy(minutes))
-
+@app.route('/advanced_settings', methods=['GET'])
+def get_advanced():
+    return jsonify(advanced_configs)
+@app.route('/advanced_settings', methods=['POST'])
+def set_advanced():
+    global advanced_configs
+    advanced_configs = request.get_json()
+    with open('advanced.json', 'w') as f:
+        json.dump(advanced_configs, f)
+    return jsonify({"status": "ok"})
 HTML_TEMPLATE = r"""
 <!doctype html>
 <html lang="sk" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
-
   <!-- Viewport (LEN JEDEN) -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-
   <title>iHome - Domáca automatizácia</title>
-
   <!-- Styles -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-
   <!-- Icons -->
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
-
   <!-- iOS app-like -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="iHome">
-
   <!-- Android / PWA -->
   <meta name="theme-color" content="#1e1e1e">
   <link rel="manifest" href="/static/manifest.json">
-
   <!-- Optional UX polish -->
   <meta name="format-detection" content="telephone=no">
-
   <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
   <style>
-
     :root { --bg: #121212; --text: #e0e0e0; --card: #1e1e1e; --primary: #0dcaf0; --value-color: #ffffff; }
     [data-bs-theme="light"] { --bg: #f8f9fa; --text: #212529; --card: #ffffff; --primary: #0d6efd; --value-color: #000000; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; }
@@ -250,35 +259,32 @@ HTML_TEMPLATE = r"""
     [data-bs-theme="light"] #bms .card { background: #f8f9fa !important; color: #212529 !important; }
     .energy-card { font-size: 1.1rem; padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.3); }
     [data-bs-theme="light"] .energy-card { background: rgba(0,0,0,0.1); }
-
     /* DIAGRAM – LEN GULIČKY, LEPŠIE NA MOBILE, MENŠÍ BLESK */
     .diagram-container { position: relative; width: 100%; max-width: 900px; height: 80vh; min-height: 600px; margin: 0 auto; }
     .inverter-center {
-      position: absolute;       /* alebo fixed, ak má byť vždy na obrazovke */
+      position: absolute; /* alebo fixed, ak má byť vždy na obrazovke */
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       width: 180px;
       height: 220px;
       background: rgba(255, 255, 255, 0.25); /* jemné priehľadné */
-      backdrop-filter: blur(10px);           /* rozmazanie toho, čo je za boxom */
-      border: 3px solid rgba(255, 255, 255, 0.3);  /* jemný okraj */
+      backdrop-filter: blur(10px); /* rozmazanie toho, čo je za boxom */
+      border: 3px solid rgba(255, 255, 255, 0.3); /* jemný okraj */
       border-radius: 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 20px rgba(0,0,0,0.2);       /* jemný tieň */
-      z-index: 9999;        /* veľmi vysoký – úplne vpredu */
+      box-shadow: 0 0 20px rgba(0,0,0,0.2); /* jemný tieň */
+      z-index: 9999; /* veľmi vysoký – úplne vpredu */
       padding: 10px 0;
       overflow: hidden;
     }
-
     .inverter-center i {
       font-size: 2.5rem;
       color: #666; /* Default šedá, keď nič netečie */
       transition: color 0.5s ease; /* Plynulý prechod farby pre lepší UX */
     }
-
     .component {
       position: absolute;
       width: 150px;
@@ -288,69 +294,58 @@ HTML_TEMPLATE = r"""
       padding: 22px;
       border-radius: 30px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-      z-index: 15;  /* DOPLNENÉ: Vyššie ako flow-svg (1), ale nižšie ako inverter (20) */
+      z-index: 15; /* DOPLNENÉ: Vyššie ako flow-svg (1), ale nižšie ako inverter (20) */
     }
-    
+   
     .flow-svg {
       position: absolute;
       top: 0; left: 0;
       width: 100%;
       height: 100%;
       pointer-events: none;
-      z-index: 1;  /* ZNÍŽENÉ: Úplne za všetkými komponentami a inverterom */
+      z-index: 1; /* ZNÍŽENÉ: Úplne za všetkými komponentami a inverterom */
     }
-
     .flow-svg path {
       stroke-linecap: round;
       stroke-linejoin: round;
     }
-
     /* Animácia pulzu pre aktívne toky */
     .flow-active {
       stroke-dasharray: 10 5; /* Robí dashed line pre flow efekt */
       animation: flow-dash 2s linear infinite, pulse-line 2s infinite ease-in-out; /* Kombinácia pohybu + pulzu */
     }
-
     .flow-reverse {
       animation: flow-dash-reverse 2s linear infinite, pulse-line 2s infinite ease-in-out !important;
       /* !important pre override, ak treba */
     }
-
     @keyframes flow-dash {
       0% { stroke-dashoffset: 0; }
       100% { stroke-dashoffset: -15; } /* Hodnota závisí od dĺžky path; uprav podľa potreby (-15 pre krátke dashes) */
     }
-
     @keyframes flow-dash-reverse {
       0% { stroke-dashoffset: 0; }
       100% { stroke-dashoffset: 15; } /* Opačný smer: "od invertora dole" (nabíjanie) – pozitívna hodnota */
     }
-
     @keyframes pulse-line {
       0%, 100% { opacity: 0.6; }
       50% { opacity: 1; }
     }
-    
-
+   
     @keyframes pulse-line {
       0%, 100% { opacity: 0.6; }
       50% { opacity: 1; }
     }
-
-
     /* Pulzujúca animácia pre aktívny tok */
     @keyframes pulse {
       0%, 100% { opacity: 0.6; transform: scaleY(1); }
       50% { opacity: 1; transform: scaleY(1.1); }
     }
-
     /* Jemný hover pre celú skupinu tlačidiel */
     .btn-group:hover {
       box-shadow: 0 8px 25px rgba(13, 202, 240, 0.25);
       transform: translateY(-3px);
       transition: all 0.3s ease;
     }
-
     /* Ešte lepší efekt pre primárne tlačidlo vnútri */
     .btn-group .btn-primary {
       transition: all 0.3s ease;
@@ -358,13 +353,11 @@ HTML_TEMPLATE = r"""
     .btn-group .btn-primary:hover {
       box-shadow: 0 6px 20px rgba(13, 202, 240, 0.4);
     }
-
     /* Hrubší a jasnejší modrý okraj pre outline tlačidlo */
     .custom-outline {
       border-width: 2px !important;
       border-color: var(--primary);
     }
-
     /* Ešte lepšia viditeľnosť pri hover/focus */
     .custom-outline:hover,
     .custom-outline:focus {
@@ -372,7 +365,6 @@ HTML_TEMPLATE = r"""
       border-color: var(--primary);
       box-shadow: 0 0 0 0.25rem rgba(13, 202, 240, 0.3);
     }
-
     /* Jemný lift efekt pre všetky tlačidlá v tejto sekcii */
     #sub-control .btn {
       transition: all 0.25s ease;
@@ -381,12 +373,10 @@ HTML_TEMPLATE = r"""
       transform: translateY(-3px);
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
     }
-
     /* Zabezpečí, že tlačidlá nebudú príliš úzke ani na mobile */
     .min-width-btn {
       min-width: 220px;
     }
-
     /* Jemný hover lift aj pre BMS tlačidlá – rovnako ako v Ovládaní meniča */
     #sub-bms .btn {
       transition: all 0.25s ease;
@@ -395,14 +385,10 @@ HTML_TEMPLATE = r"""
       transform: translateY(-3px);
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
     }
-
-
     #grid-power, #grid-energy {
       white-space: pre-line; /* Umožní zobrazenie \n ako nový riadok */
       line-height: 1.2; /* Voliteľne: lepší odstup riadkov */
     }
-
-
     @media (max-width: 768px) {
       .diagram-container { height: 75vh; min-height: 560px; }
       .inverter-center { width: 130px; height: 180px; }
@@ -425,23 +411,21 @@ HTML_TEMPLATE = r"""
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('fotovoltaika')">Fotovoltaika</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('topenie')">Topenie</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('distribucia')">Distribúcia</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('advanced')">Advanced</a></li>
         </ul>
         <button id="theme-toggle" class="btn btn-outline-light"><i class="fas fa-moon"></i></button>
       </div>
     </div>
   </nav>
-
   <div class="container mb-4">
     <div class="info-bar text-center d-flex justify-content-center flex-wrap gap-4">
       <span>Von: <i class="fa fa-thermometer-half"></i> <strong id="outdoor-temp-value">-</strong>°C <i class="fas fa-tint me-2"></i><strong id="outdoor-hum-value">-</strong>%</span>
       <span>Dnu: <i class="fa fa-thermometer-half"></i> <strong id="indoor-temp-value">-</strong>°C <i class="fas fa-tint me-2"></i><strong id="indoor-hum-value">-</strong>%</span>
       </div>
   </div>
-
   <div class="container">
     <div id="home" class="section active">
       <h2 class="text-center mb-5 mt-4 text-primary fw-bold">Hlavný prehľad</h2>
-
       <div class="card shadow-lg mb-4 clickable-card" onclick="showMainSection('fotovoltaika'); showSubSection('home')">
         <div class="card-body py-4">
           <div class="row align-items-center">
@@ -465,7 +449,6 @@ HTML_TEMPLATE = r"""
           </div>
         </div>
       </div>
-
       <div class="card shadow-lg mb-4 clickable-card" onclick="showMainSection('topenie')">
         <div class="card-body py-4">
           <div class="row align-items-center">
@@ -474,7 +457,6 @@ HTML_TEMPLATE = r"""
           </div>
         </div>
       </div>
-
       <div class="card shadow-lg clickable-card" onclick="showMainSection('distribucia')">
         <div class="card-body py-4">
           <div class="row align-items-center">
@@ -493,12 +475,8 @@ HTML_TEMPLATE = r"""
           </div>
         </div>
       </div>
-
     </div>
-
-
-    
-
+   
     <div id="fotovoltaika" class="section">
       <div class="container mb-4">
         <ul class="nav nav-pills nav-fill shadow rounded bg-dark">
@@ -509,30 +487,27 @@ HTML_TEMPLATE = r"""
           <li class="nav-item"><a class="nav-link" href="#" onclick="showSubSection('control')">Ovládanie</a></li>
         </ul>
       </div>
-
       <div id="sub-home" class="sub-section active">
         <div class="container py-4">
           <h2 class="text-center mb-5 text-primary fw-bold ">Prehľad systému</h2>
           <div class="diagram-container">
             <a class="nav-link" href="#" onclick="showSubSection('detail')">
-              <div class="inverter-center">             
+              <div class="inverter-center">
               <i class="fas fa-bolt"></i>
               <div class="mt-2 small">Inverter mode</div>
               <div class="text-primary fw-bold" id="inverter-mode">Battery</div>
               <div class="fw-bold fs-3 mt-1" id="inverter-temp">45 °C</div>
               </div>
             </a>
-
             <!-- Najprv všetky komponenty -->
             <div class="component" style="top: 5%; left: 5%;">
               <a class="nav-link" href="#" onclick="showMainSection('distribucia')">
                 <div class="small fw-bold mb-1">Distribúcia</div>
                 <div id="grid-voltage" class="fs-4 text-warning">-</div>
                 <div id="grid-power" class="small text-muted mt-1">0 W-DS</div>
-                <div id="grid-energy" class="small text-muted mt-1">0 kWh (od resetu)</div>                
+                <div id="grid-energy" class="small text-muted mt-1">0 kWh (od resetu)</div>
               </a>
             </div>
-
             <div class="component" style="top: 5%; right: 5%;">
               <a class="nav-link" href="#" onclick="showSubSection('grafy')">
                 <div class="small fw-bold mb-1">Solar</div>
@@ -541,7 +516,6 @@ HTML_TEMPLATE = r"""
                 <i class="fas fa-solar-panel fa-2x text-warning mt-2"></i>
               </a>
             </div>
-
             <div class="component" style="bottom: 5%; left: 5%;">
               <a class="nav-link active" href="#" onclick="showSubSection('bms')">
                 <div class="small fw-bold mb-1">Batéria</div>
@@ -550,7 +524,6 @@ HTML_TEMPLATE = r"""
                 <i id="battery-icon" class="fas fa-battery-full fa-2x text-success mt-2"></i>
               </a>
             </div>
-
             <div class="component" style="bottom: 5%; right: 5%;">
               <a class="nav-link" href="#" onclick="showSubSection('grafy')">
                 <div class="small fw-bold mb-1">Spotreba</div>
@@ -559,7 +532,6 @@ HTML_TEMPLATE = r"""
                 <i class="fas fa-home fa-2x text-info mt-2"></i>
               </a>
             </div>
-
             <!-- A AŽ POTOM flow-line linky -->
             <svg class="flow-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
               <path id="flow-pv-path" d="" stroke="gray" stroke-width="0.8" fill="none" stroke-linecap="round"/>
@@ -568,27 +540,26 @@ HTML_TEMPLATE = r"""
               <path id="flow-load-path" d="" stroke="gray" stroke-width="0.8" fill="none" stroke-linecap="round"/>
             </svg>
           </div>
-
           <!-- Rýchle prepnutie priority výstupu -->
           <div class="mt-5">
             <h4 class="text-center text-primary mb-4 fw-bold">Rýchle prepnutie priority výstupu</h4>
             <div class="row g-3 justify-content-center">
               <div class="col-12 col-sm-4">
-                <button class="btn btn-outline-warning w-100 shadow-sm rounded-pill fw-bold" 
+                <button class="btn btn-outline-warning w-100 shadow-sm rounded-pill fw-bold"
                         onclick="quickSetPriority(0)">
                   <i class="fas fa-plug-circle-bolt me-2"></i>
                   Distribúcia<br><small>(Utility First)</small>
                 </button>
               </div>
               <div class="col-12 col-sm-4">
-                <button class="btn btn-outline-success w-100 shadow-sm rounded-pill fw-bold" 
+                <button class="btn btn-outline-success w-100 shadow-sm rounded-pill fw-bold"
                         onclick="quickSetPriority(1)">
                   <i class="fas fa-solar-panel me-2"></i>
                   Solar<br><small>(Solar First)</small>
                 </button>
               </div>
               <div class="col-12 col-sm-4">
-                <button class="btn btn-outline-info w-100 shadow-sm rounded-pill fw-bold" 
+                <button class="btn btn-outline-info w-100 shadow-sm rounded-pill fw-bold"
                         onclick="quickSetPriority(2)">
                   <i class="fas fa-battery-full me-2"></i>
                   Batéria<br><small>(SBU Priority)</small>
@@ -599,17 +570,14 @@ HTML_TEMPLATE = r"""
               Okamžitá zmena priority výstupu meniča
             </div>
           </div>
-
         </div>
       </div>
-
       <div id="sub-detail" class="sub-section">
         <div class="container">
           <h2 class="text-center mb-4">Detailné hodnoty</h2>
           <div class="row" id="detail-content"></div>
         </div>
       </div>
-
       <div id="sub-grafy" class="sub-section">
         <div class="container">
           <h2 class="text-center mb-4">Grafy a energie</h2>
@@ -642,7 +610,6 @@ HTML_TEMPLATE = r"""
                 </div>
               </div>
             </div>
-
             <div class="col-6 col-md-3">
               <div class="energy-card text-center p-4 rounded shadow-sm">
                 <div class="text-info fw-bold mb-3 fs-5">Spotreba</div>
@@ -652,7 +619,6 @@ HTML_TEMPLATE = r"""
                 </div>
               </div>
             </div>
-
             <div class="col-6 col-md-3">
               <div class="energy-card text-center p-4 rounded shadow-sm">
                 <div class="text-success fw-bold mb-3 fs-5">Nabíjanie</div>
@@ -662,7 +628,6 @@ HTML_TEMPLATE = r"""
                 </div>
               </div>
             </div>
-
             <div class="col-6 col-md-3">
               <div class="energy-card text-center p-4 rounded shadow-sm">
                 <div class="text-danger fw-bold mb-3 fs-5">Vybíjanie</div>
@@ -679,7 +644,6 @@ HTML_TEMPLATE = r"""
           </div>
         </div>
       </div>
-
       <div id="sub-bms" class="sub-section">
         <div class="container">
           <h2 class="text-center mb-4">JK-BMS – Jednotlivé články</h2>
@@ -709,7 +673,6 @@ HTML_TEMPLATE = r"""
               </div>
             </div>
           </div>
-
           <div class="row mb-4 g-3 justify-content-center">
             <div class="col-6 col-md-3">
               <div class="card text-center p-2 bms-card">
@@ -724,17 +687,14 @@ HTML_TEMPLATE = r"""
               </div>
             </div>
           </div>
-
           <div class="card p-3 shadow">
             <h4 class="text-center text-primary mb-3">Napätia článkov</h4>
             <div class="row g-2" id="bms-cells"></div>
           </div>
-
                     <div class="row justify-content-center mt-5">
             <div class="col-12 col-md-9 col-lg-7"> <!-- Užšie na veľkých obrazovkách -->
               <div class="card p-4 shadow"> <!-- Karta okolo ovládania -->
                 <h4 class="text-center text-primary mb-4 fw-bold">Ovládanie BMS</h4>
-
                 <!-- Nabíjanie: ON / OFF -->
                 <div class="d-flex flex-column flex-sm-row gap-3 justify-content-center align-items-center mb-4">
                   <button class="btn btn-success px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
@@ -743,7 +703,6 @@ HTML_TEMPLATE = r"""
                     <span class="d-none d-sm-inline">Zapnúť nabíjanie</span>
                     <span class="d-inline d-sm-none">Nabíjanie ON</span>
                   </button>
-
                   <button class="btn btn-danger px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
                           onclick="controlBMS('charge_off')">
                     <i class="fas fa-power-off me-2"></i>
@@ -751,7 +710,6 @@ HTML_TEMPLATE = r"""
                     <span class="d-inline d-sm-none">Nabíjanie OFF</span>
                   </button>
                 </div>
-
                 <!-- Vybíjanie: ON / OFF -->
                 <div class="d-flex flex-column flex-sm-row gap-3 justify-content-center align-items-center">
                   <button class="btn btn-info px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
@@ -760,7 +718,6 @@ HTML_TEMPLATE = r"""
                     <span class="d-none d-sm-inline">Zapnúť vybíjanie</span>
                     <span class="d-inline d-sm-none">Vybíjanie ON</span>
                   </button>
-
                   <button class="btn btn-danger px-5 py-3 rounded-pill shadow-sm fw-medium flex-grow-1 flex-sm-grow-0 min-width-btn"
                           onclick="controlBMS('discharge_off')">
                     <i class="fas fa-power-off me-2"></i>
@@ -768,21 +725,18 @@ HTML_TEMPLATE = r"""
                     <span class="d-inline d-sm-none">Vybíjanie OFF</span>
                   </button>
                 </div>
-
                 <div class="mt-4 text-center text-muted small opacity-75">
                   Ovládanie batériového modulu Jikong JK-BMS
                 </div>
               </div>
             </div>
-          
+         
           </div>
         </div>
       </div>
-
       <div id="sub-control" class="sub-section">
         <div class="container">
           <h2 class="text-center mb-5 text-primary fw-bold">Ovládanie meniča</h2>
-
           <div class="card p-4 mb-4 shadow">
             <h4 class="mb-4 text-primary">Nastavenia batérie</h4>
             <div class="row g-4 align-items-end">
@@ -808,7 +762,6 @@ HTML_TEMPLATE = r"""
               </div>
             </div>
           </div>
-
           <div class="card p-4 mb-4 shadow">
             <h4 class="mb-4 text-primary">Prúdy nabíjania</h4>
             <div class="row g-4 align-items-end">
@@ -822,7 +775,6 @@ HTML_TEMPLATE = r"""
               </div>
             </div>
           </div>
-
           <div class="card p-4 mb-5 shadow">
             <h4 class="mb-4 text-primary">Ostatné nastavenia</h4>
             <div class="row g-4">
@@ -867,31 +819,27 @@ HTML_TEMPLATE = r"""
               </div>
             </div>
           </div>
-
           <div class="text-center mt-5">
             <div class="d-flex flex-column flex-md-row gap-3 justify-content-center align-items-center">
-              <button class="btn btn-outline-primary px-5 py-3 rounded-pill shadow-sm fw-medium custom-outline" 
+              <button class="btn btn-outline-primary px-5 py-3 rounded-pill shadow-sm fw-medium custom-outline"
                       onclick="readSettings()">
                 <i class="fas fa-download me-2"></i>
                 <span class="d-none d-sm-inline">Načítať nastavenia</span>
                 <span class="d-inline d-sm-none">Načítať</span>
               </button>
-
-              <button class="btn btn-primary px-5 py-3 rounded-pill shadow fw-bold" 
+              <button class="btn btn-primary px-5 py-3 rounded-pill shadow fw-bold"
                       onclick="writeSettings()">
                 <i class="fas fa-upload me-2"></i>
                 <span class="d-none d-sm-inline">Zapísať nastavenia</span>
                 <span class="d-inline d-sm-none">Zapísať</span>
               </button>
-
-              <button class="btn btn-danger px-5 py-3 rounded-pill shadow-sm fw-medium" 
+              <button class="btn btn-danger px-5 py-3 rounded-pill shadow-sm fw-medium"
                       onclick="restartScript()">
                 <i class="fas fa-redo-alt me-2"></i>
                 <span class="d-none d-sm-inline">Reštart skriptu</span>
                 <span class="d-inline d-sm-none">Reštart</span>
               </button>
             </div>
-
             <div class="mt-3 text-muted small opacity-75">
               Ovládanie meniča a skriptu Main.py
             </div>
@@ -899,22 +847,18 @@ HTML_TEMPLATE = r"""
         </div>
       </div>
     </div>
-
     <div id="topenie" class="section">
       <div class="container">
         <h2 class="text-center mt-5 text-primary">Topenie</h2>
         <p class="text-center text-muted mt-4">Zatiaľ žiadne dáta k dispozícii.</p>
       </div>
     </div>
-
     <div id="distribucia" class="section">
       <div class="container">
         <h2 class="text-center mb-4 mt-4 text-primary fw-bold">Meranie distribúcie elektrickej energie</h2>
-
         <div class="row g-4" id="distribucia-content">
           <!-- Dynamicky vyplnené cez JS -->
         </div>
-
         <div class="card mb-4 mt-5 p-4 shadow">
           <h4 class="text-center text-primary">Spolu</h4>
           <div class="row text-center">
@@ -934,48 +878,51 @@ HTML_TEMPLATE = r"""
           </button>
         </div>
       </div>
-    </div>
+    </div>  <!-- KONIEC DISTRIBUCIA -->
+
+    <div id="advanced" class="section">  <!-- TU ZAČÍNA ADVANCED -->
+      <div class="container">
+        <h2 class="text-center mb-4">Advanced Settings</h2>
+        <form id="advanced-form">
+          <div id="settings-list" class="row"></div>
+          <div class="text-center mt-4">
+            <button type="button" class="btn btn-primary" onclick="saveAdvanced()">Uložiť nastavenia</button>
+          </div>
+        </form>
+      </div>
+    </div>  <!-- KONIEC ADVANCED -->
   </div>
-
-
-
   <footer class="text-center py-3 mt-5">
     <small id="status">Načítavam...</small>
   </footer>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     const REFRESH = 3000;
-    let lastLoaded = 'today';  // Default pri načítaní stránky: 'today'
+    let lastLoaded = 'today'; // Default pri načítaní stránky: 'today'
     let data = {}, info = {};
     let charts = {};
-
-  
+ 
     const themeToggle = document.getElementById('theme-toggle');
     const htmlEl = document.documentElement;
-
     function setTheme(theme) {
       htmlEl.setAttribute('data-bs-theme', theme);
       themeToggle.innerHTML = theme === 'dark' ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
       localStorage.setItem('theme', theme);
     }
-
     const savedTheme = localStorage.getItem('theme') || 'dark';
     setTheme(savedTheme);
-
     themeToggle.addEventListener('click', () => {
       const current = htmlEl.getAttribute('data-bs-theme');
       setTheme(current === 'dark' ? 'light' : 'dark');
     });
-
     function showMainSection(id) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
       document.querySelectorAll('.navbar .nav-link').forEach(l => l.classList.remove('active'));
       document.querySelector(`.navbar .nav-link[onclick="showMainSection('${id}')"]`)?.classList.add('active');
       if (id === 'fotovoltaika') showSubSection('home');
+      if (id === 'advanced') renderAdvanced();
     }
-
     function showSubSection(id) {
       document.querySelectorAll('#fotovoltaika .sub-section').forEach(s => s.classList.remove('active'));
       document.getElementById('sub-' + id).classList.add('active');
@@ -993,13 +940,11 @@ HTML_TEMPLATE = r"""
       }
       if (id === 'control') readSettings();
     }
-
     function updateHomeSummary() {
       const v65 = data['V65'];
       const v76 = data['V76'];
       const v75 = data['V75'];
       const v70 = data['V70'];
-
       document.getElementById('home-V65').textContent = v65 !== undefined ? v65 + ' W' : '-';
       document.getElementById('home-V76').textContent = v76 !== undefined ? v76 + ' W' : '-';
       document.getElementById('home-V75').textContent = v75 !== undefined ? (v75 > 0 ? '+' + v75 : v75) + ' W' : '-';
@@ -1007,14 +952,12 @@ HTML_TEMPLATE = r"""
       document.getElementById('home-mode-value').textContent = data['V1'] || '-';
       document.getElementById('home-temp-value').textContent = data['V71'] || '-';
     }
-
     function updateInfoBar() {
       document.getElementById('indoor-temp-value').textContent = data['indoor_temp'] !== undefined ? parseFloat(data['indoor_temp']).toFixed(1) : '-';
       document.getElementById('indoor-hum-value').textContent = data['indoor_humidity'] !== undefined ? Math.round(data['indoor_humidity']) : '-';
       document.getElementById('outdoor-temp-value').textContent = data['outdoor_temp'] !== undefined ? parseFloat(data['outdoor_temp']).toFixed(1) : '-';
       document.getElementById('outdoor-hum-value').textContent = data['outdoor_humidity'] !== undefined ? Math.round(data['outdoor_humidity']) : '-';
     }
-
     function renderDetail() {
       const c = document.getElementById('detail-content');
       c.innerHTML = '';
@@ -1048,38 +991,32 @@ HTML_TEMPLATE = r"""
         c.innerHTML += groupHTML;
       });
     }
-
     function renderBMSPage() {
-      const totalV   = data['V230'] || '-';
-      const current  = data['V231'] || '-';
-      const soc      = data['V232'] || '-';
-      const delta    = data['V233'] || '-';
-      const minCell  = data['V234'] || null;
-      const maxCell  = data['V236'] || null;
-      const temp1    = data['V238'] || '-';
-      const temp2    = data['V239'] || '-';
-
+      const totalV = data['V230'] || '-';
+      const current = data['V231'] || '-';
+      const soc = data['V232'] || '-';
+      const delta = data['V233'] || '-';
+      const minCell = data['V234'] || null;
+      const maxCell = data['V236'] || null;
+      const temp1 = data['V238'] || '-';
+      const temp2 = data['V239'] || '-';
       document.getElementById('bms-total-voltage').textContent = totalV + ' V';
       document.getElementById('bms-current').textContent = current + ' A';
       document.getElementById('bms-soc').textContent = soc + ' %';
       document.getElementById('bms-delta').textContent = delta + ' V';
       document.getElementById('bms-temp1').textContent = temp1 + ' °C';
       document.getElementById('bms-temp2').textContent = temp2 + ' °C';
-
       const container = document.getElementById('bms-cells');
       container.innerHTML = '';
       for (let i = 0; i < 24; i++) {
         const pin = `V${240 + i}`;
         const value = data[pin];
         if (value === undefined || value === '-') continue;
-
         const volt = parseFloat(value);
         let bgClass = 'bg-dark text-white';
         let label = 'normal';
-
         if (i + 1 == minCell) { bgClass = 'bg-danger text-white'; label = 'minimum'; }
         if (i + 1 == maxCell) { bgClass = 'bg-success text-white'; label = 'maximum'; }
-
         container.innerHTML += `
           <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center p-2 ${bgClass}">
@@ -1090,13 +1027,11 @@ HTML_TEMPLATE = r"""
           </div>`;
       }
     }
-
     function updateDiagram() {
       const pv = parseFloat(data['V76']) || 0;
       const load = parseFloat(data['V65']) || 0;
       const batteryRaw = parseFloat(data['V75']) || 0;
       const soc = parseFloat(data['V70']) || 0;
-
       // Texty v diagrame
       document.getElementById('pv-power').textContent = pv > 0 ? pv.toFixed(0) + ' W' : '0 W';
       document.getElementById('load-power').textContent = load > 0 ? load.toFixed(0) + ' W' : '0 W';
@@ -1107,15 +1042,12 @@ HTML_TEMPLATE = r"""
       document.getElementById('battery-soc').textContent = soc.toFixed(0) + ' %';
       document.getElementById('grid-voltage').textContent = data['V60'] ? data['V60'] + ' V' : '-';
       document.getElementById('inverter-temp').textContent = data['V71'] ? data['V71'] + ' °C' : '-';
-
       // Doplnene pre zobrazenie PZEM vykonu na Home stranke
       const totalPower = data['PZEM_total_power'] || 0;
       document.getElementById('grid-power').textContent = data['PZEM_total_power'] ? data['PZEM_total_power'] + ' W' : '-';
       document.getElementById('grid-energy').textContent = data['PZEM_total_energy'] ? data['PZEM_total_energy'].toFixed(2) + ' kWh\n(od resetu)' : '0 kWh\n(od resetu)';
-
       // Zobrazenie režimu meniča – TENTO RIADOK NASTAVUJE TEXT!
       document.getElementById('inverter-mode').textContent = data['V1'] || '-';
-
       // Ikona batérie
       const icon = document.getElementById('battery-icon');
       if (soc < 20) icon.className = 'fas fa-battery-empty fa-2x text-danger';
@@ -1123,14 +1055,11 @@ HTML_TEMPLATE = r"""
       else if (soc < 60) icon.className = 'fas fa-battery-half fa-2x text-warning';
       else if (soc < 80) icon.className = 'fas fa-battery-three-quarters fa-2x text-success';
       else icon.className = 'fas fa-battery-full fa-2x text-success';
-
       /* ===== SVG TOKY ENERGIE - PRESNÉ, RESPONSÍVNE, S LOGIKOU ===== */
       const FLOW_THRESHOLD = 10;
-
       function setFlowPath(id, active, color) {
         const path = document.getElementById(id);
         if (!path) return;
-
         if (active) {
           path.classList.add('flow-active');
           path.setAttribute('stroke', color);
@@ -1141,7 +1070,6 @@ HTML_TEMPLATE = r"""
           path.setAttribute('stroke-width', '0.6');
         }
       }
-
       function updateFlowPositions() {
         const container = document.querySelector('.diagram-container');
         if (!container) return;
@@ -1150,88 +1078,70 @@ HTML_TEMPLATE = r"""
         const gridComp = document.querySelector('.component[style*="left: 5%"][style*="top: 5%"]'); // Distribúcia
         const batteryComp = document.querySelector('.component[style*="left: 5%"][style*="bottom: 5%"]'); // Batéria
         const loadComp = document.querySelector('.component[style*="right: 5%"][style*="bottom: 5%"]'); // Spotreba
-
         if (!inverter) return;
-
         const contRect = container.getBoundingClientRect();
         const invRect = inverter.getBoundingClientRect();
-
         // Stred invertera (pre PV a Grid zhora)
         const invCenterX = (invRect.left + invRect.width / 2 - contRect.left) / contRect.width * 100;
         const invCenterY = (invRect.top + invRect.height / 2 - contRect.top) / contRect.height * 100;
-
         // Okraje invertera – kam majú čiary mieriť
-        const invTop = (invRect.top + 15 - contRect.top) / contRect.height * 100;        // trochu dole od vrchu
-        const invBottom = (invRect.bottom - 15 - contRect.top) / contRect.height * 100;  // trochu hore od spodku
-
+        const invTop = (invRect.top + 15 - contRect.top) / contRect.height * 100; // trochu dole od vrchu
+        const invBottom = (invRect.bottom - 15 - contRect.top) / contRect.height * 100; // trochu hore od spodku
         function getComponentTopCenter(el) {
           if (!el) return { x: 50, y: 90 };
           const rect = el.getBoundingClientRect();
           return {
             x: (rect.left + rect.width / 2 - contRect.left) / contRect.width * 100,
-            y: (rect.top - contRect.top) / contRect.height * 100   // horný okraj komponentu!
+            y: (rect.top - contRect.top) / contRect.height * 100 // horný okraj komponentu!
           };
         }
-
         function getComponentBottomCenter(el) {
           if (!el) return { x: 50, y: 10 };
           const rect = el.getBoundingClientRect();
           return {
             x: (rect.left + rect.width / 2 - contRect.left) / contRect.width * 100,
-            y: (rect.bottom - contRect.top) / contRect.height * 100  // spodný okraj
+            y: (rect.bottom - contRect.top) / contRect.height * 100 // spodný okraj
           };
         }
-
-        const solarPos = getComponentBottomCenter(solarComp);  // PV zhora → spodok komponentu
-        const gridPos = getComponentBottomCenter(gridComp);    // Grid zhora → spodok komponentu
+        const solarPos = getComponentBottomCenter(solarComp); // PV zhora → spodok komponentu
+        const gridPos = getComponentBottomCenter(gridComp); // Grid zhora → spodok komponentu
         const batteryPos = getComponentTopCenter(batteryComp); // Batéria zdola → horný okraj!
-        const loadPos = getComponentTopCenter(loadComp);       // Spotreba zdola → horný okraj!
-
+        const loadPos = getComponentTopCenter(loadComp); // Spotreba zdola → horný okraj!
         // PV → Inverter (zhora dole)
         document.getElementById('flow-pv-path').setAttribute('d',
           `M ${solarPos.x} ${solarPos.y} L ${solarPos.x} ${invTop + 5} L ${invCenterX} ${invTop + 5}`
         );
-
         // Grid → Inverter (zhora dole)
         document.getElementById('flow-grid-path').setAttribute('d',
           `M ${gridPos.x} ${gridPos.y} L ${gridPos.x} ${invTop + 5} L ${invCenterX} ${invTop + 5}`
         );
-
         // Batéria → Inverter (zdola nahor) – štartuje z hornej hrany batérie
         document.getElementById('flow-battery-path').setAttribute('d',
           `M ${batteryPos.x} ${batteryPos.y} L ${batteryPos.x} ${invBottom - 5} L ${invCenterX} ${invBottom - 5}`
         );
-
         // Inverter → Spotreba (zdola nahor do spotreby)
         document.getElementById('flow-load-path').setAttribute('d',
           `M ${invCenterX} ${invBottom - 5} L ${loadPos.x} ${invBottom - 5} L ${loadPos.x} ${loadPos.y}`
         );
       }
-
       // Aktualizuj pozície čiar
       updateFlowPositions();
-
       // Teraz čítaj mode z DOM pre logiku farieb (po nastavení)
       const modeElement = document.getElementById('inverter-mode');
       const mode = modeElement ? modeElement.textContent.trim() : '';
-
       // Pre debug (môžeš odkomentovať pre testovanie)
       // console.log('Nastavený mode z dát:', data['V1']);
       // console.log('Čítaný mode z DOM:', mode);
-
       // === LOGIKA FARIEB A AKTIVITY TOKOV ===
       const pvPower = pv;
       const batteryPower = batteryRaw; // >0 = nabíjanie, <0 = vybíjanie
       const loadPower = load;
-
       // 1. PV čiara (Solar → Inverter)
       const pvActive = pvPower > FLOW_THRESHOLD;
       setFlowPath('flow-pv-path', pvActive, '#00ff00'); // vždy zelená, ak ide výkon zo solaru
-
       // 2. Grid čiara (Distribúcia → Inverter)
       const gridActive = mode === 'Line';
       setFlowPath('flow-grid-path', gridActive, '#2196f3'); // modrá, len ak je režim Line
-
       // 3. Batéria čiara (Batéria ↔ Inverter)
       const batteryActive = Math.abs(batteryPower) > FLOW_THRESHOLD;
       let batteryColor = '#666';
@@ -1239,20 +1149,17 @@ HTML_TEMPLATE = r"""
         batteryColor = batteryPower > 0 ? '#00ff00' : '#f44336'; // zelená = nabíjanie, červená = vybíjanie
       }
       setFlowPath('flow-battery-path', batteryActive, batteryColor);
-
       // NOVÉ: Obráť smer animácie pre nabíjanie
       const batteryPath = document.getElementById('flow-battery-path');
-      if (batteryActive && batteryPower > 0) {  // Nabíjanie: opačný smer
+      if (batteryActive && batteryPower > 0) { // Nabíjanie: opačný smer
         batteryPath.classList.add('flow-reverse');
       } else {
         batteryPath.classList.remove('flow-reverse');
       }
       setFlowPath('flow-battery-path', batteryActive, batteryColor);
-
       // 4. Spotreba čiara (Inverter → Spotreba)
       const loadActive = loadPower > FLOW_THRESHOLD;
       let loadColor = '#666';
-
       if (loadActive) {
         if (mode === 'Line') {
           loadColor = '#2196f3'; // modrá – ide zo siete
@@ -1260,7 +1167,6 @@ HTML_TEMPLATE = r"""
           // Priorita: Solar > Batéria
           const solarToLoad = Math.min(pvPower, loadPower);
           const batteryToLoad = loadPower - solarToLoad;
-
           if (solarToLoad > Math.abs(batteryToLoad) + 10) {
             loadColor = '#00ff00'; // prevažne zo solaru → zelená
           } else if (Math.abs(batteryToLoad) > solarToLoad + 10) {
@@ -1271,27 +1177,22 @@ HTML_TEMPLATE = r"""
         }
       }
       setFlowPath('flow-load-path', loadActive, loadColor);
-      // console.log('Load color:', loadColor, 'Mode:', mode);  // Debug
-
-
+      // console.log('Load color:', loadColor, 'Mode:', mode); // Debug
       // Dynamická farba ikony blesku podľa toku do spotreby
       const boltIcon = document.querySelector('.inverter-center i');
       if (loadActive) {
-        boltIcon.style.color = loadColor;  // Rovnaká farba ako load čiara (modrá pri Line, zelená pri solare, atď.)
+        boltIcon.style.color = loadColor; // Rovnaká farba ako load čiara (modrá pri Line, zelená pri solare, atď.)
       } else {
-        boltIcon.style.color = '#666';     // Šedá, keď nič netečie (žiadna spotreba)
+        boltIcon.style.color = '#666'; // Šedá, keď nič netečie (žiadna spotreba)
       }
-
       // Koniec hlavnej funkcie updateDiagram()
     }
-
     function renderEnergy(energy) {
       document.getElementById('energy-pv').textContent = energy.pv;
       document.getElementById('energy-load').textContent = energy.load;
       document.getElementById('energy-charge').textContent = energy.charge;
       document.getElementById('energy-discharge').textContent = energy.discharge;
     }
-
     async function updateCharts(h) {
       const ctxPower = document.getElementById('chartPower').getContext('2d');
       if (charts.power) charts.power.destroy();
@@ -1307,7 +1208,6 @@ HTML_TEMPLATE = r"""
         },
         options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { maxTicksLimit: 15 } } } }
       });
-
       const ctxSOC = document.getElementById('chartSOC').getContext('2d');
       if (charts.soc) charts.soc.destroy();
       charts.soc = new Chart(ctxSOC, {
@@ -1316,48 +1216,43 @@ HTML_TEMPLATE = r"""
         options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { maxTicksLimit: 15 } } } }
       });
     }
-
     async function loadToday(event) {
       if (event) {
         document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
       }
-      lastLoaded = 'today';  // Pamätaj si tento rozsah
+      lastLoaded = 'today'; // Pamätaj si tento rozsah
       const res = await fetch('/history/today');
       const h = await res.json();
       renderEnergy(h.energy);
       updateCharts(h);
     }
-
     async function loadMinutes(m, event) {
       if (event) {
         document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
       }
-      lastLoaded = m;  // Pamätaj si tento rozsah (číslo minút)
+      lastLoaded = m; // Pamätaj si tento rozsah (číslo minút)
       const res = await fetch(`/history/${m}`);
       const h = await res.json();
       renderEnergy(h.energy);
       updateCharts(h);
     }
-
     async function loadCustom() {
       const from = document.getElementById('date-from').value;
       const to = document.getElementById('date-to').value;
       if (!from || !to) { alert("Vyber oba dátumy"); return; }
       document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
-      lastLoaded = 'custom';  // Pamätaj si custom
+      lastLoaded = 'custom'; // Pamätaj si custom
       const res = await fetch(`/history/custom?start=${from}&end=${to}`);
       const h = await res.json();
       renderEnergy(h.energy);
       updateCharts(h);
     }
-
     document.getElementById('toggle-custom').addEventListener('click', () => {
       const el = document.getElementById('custom-range');
       el.style.display = el.style.display === 'none' ? 'block' : 'none';
     });
-
     async function controlBMS(action) {
       try {
         const response = await fetch('http://192.168.3.84:8001/bms/control', {
@@ -1376,7 +1271,6 @@ HTML_TEMPLATE = r"""
       }
       load();
     }
-
     async function readSettings() {
       try {
         const res = await fetch('http://192.168.3.84:8002/control/read_settings');
@@ -1403,16 +1297,13 @@ HTML_TEMPLATE = r"""
         alert("✗ Chyba spojenia s Main.py (port 8002)");
       }
     }
-
     async function quickSetPriority(value) {
       // Vizálne označenie, že sa niečo deje
       const buttons = document.querySelectorAll('#sub-home button[onclick^="quickSetPriority"]');
       buttons.forEach(b => b.disabled = true);
-
       const settings = {
         v94: parseInt(value)
       };
-
       try {
         const res = await fetch('http://192.168.3.84:8002/control/write_settings', {
           method: 'POST',
@@ -1420,7 +1311,6 @@ HTML_TEMPLATE = r"""
           body: JSON.stringify(settings)
         });
         const json = await res.json();
-
         if (json.status === "success") {
           // Krátky feedback
           document.getElementById('status').textContent = `Priority zmenená: ${value === 0 ? 'Distribúcia' : value === 1 ? 'Solar' : 'Batéria'} ✓`;
@@ -1432,16 +1322,13 @@ HTML_TEMPLATE = r"""
       } catch (e) {
         document.getElementById('status').textContent = '✗ Spojenie s Main.py zlyhalo';
       }
-
       // Po chvíli povolíme tlačidlá späť
       setTimeout(() => {
         buttons.forEach(b => b.disabled = false);
       }, 2000);
     }
-
     async function writeSettings() {
       if (!confirm("Naozaj chceš zapísať tieto nastavenia do meniča?")) return;
-
       const settings = {
         v86: parseFloat(document.getElementById('v86').value),
         v87: parseFloat(document.getElementById('v87').value),
@@ -1456,7 +1343,6 @@ HTML_TEMPLATE = r"""
         v98: parseInt(document.getElementById('v98').value),
         v93: parseInt(document.getElementById('v93').value),
       };
-
       try {
         const res = await fetch('http://192.168.3.84:8002/control/write_settings', {
           method: 'POST',
@@ -1465,7 +1351,6 @@ HTML_TEMPLATE = r"""
         });
         const json = await res.json();
         alert(json.status === "success" ? "✓ " + json.message : "✗ " + json.message);
-
         if (json.status === "success") {
           setTimeout(() => readSettings(), 3000);
         }
@@ -1473,7 +1358,6 @@ HTML_TEMPLATE = r"""
         alert("✗ Chyba spojenia s Main.py");
       }
     }
-
     async function restartScript() {
       if (!confirm("Naozaj reštartovať Main.py?")) return;
       try {
@@ -1484,25 +1368,21 @@ HTML_TEMPLATE = r"""
         alert("✗ Chyba spojenia s Main.py");
       }
     }
-
     function updateHomeDistribucia() {
       const l1 = data['PZEM_L1_power'] || 0;
       const l2 = data['PZEM_L2_power'] || 0;
       const l3 = data['PZEM_L3_power'] || 0;
       const total = data['PZEM_total_power'] || 0;
       const energy = data['PZEM_total_energy'] || 0;
-
       document.getElementById('home-L1-power').textContent = l1.toFixed(0) + ' W';
       document.getElementById('home-L2-power').textContent = l2.toFixed(0) + ' W';
       document.getElementById('home-L3-power').textContent = l3.toFixed(0) + ' W';
       document.getElementById('home-total-power').textContent = total.toFixed(0) + ' W';
       document.getElementById('home-total-energy').textContent = energy.toFixed(3) + ' kWh';
     }
-
     function renderDistribucia() {
       const container = document.getElementById('distribucia-content');
       container.innerHTML = '';
-
       const faze = ['L1', 'L2', 'L3'];
       faze.forEach(f => {
         const base = `PZEM_${f}`;
@@ -1510,12 +1390,11 @@ HTML_TEMPLATE = r"""
         const voltage = data[base + '_voltage'] || 0;
         const current = data[base + '_current'] || 0;
         const energy = data[base + '_energy'] || 0;
-
         container.innerHTML += `
           <div class="col-md-4 col-lg-4">
             <div class="card shadow text-center p-4">
               <h4 class="text-primary mb-4">Fáza ${f}</h4>
-              
+             
               <!-- Prvý riadok: Napätie | Prúd | Výkon -->
               <div class="row g-3 mb-4">
                 <div class="col-4">
@@ -1531,7 +1410,6 @@ HTML_TEMPLATE = r"""
                   <div class="fs-4 fw-bold text-danger">${power.toFixed(0)}<small class="fs-6"> W</small></div>
                 </div>
               </div>
-
               <!-- Druhý riadok: Spotreba od resetu -->
               <div class="pt-3 border-top">
                 <div class="text-muted small mb-1">Spotreba od resetu</div>
@@ -1540,14 +1418,12 @@ HTML_TEMPLATE = r"""
             </div>
           </div>`;
       });
-
       // Súčty dole
-      document.getElementById('dist-total-power').textContent = 
+      document.getElementById('dist-total-power').textContent =
         (data['PZEM_total_power'] || 0).toFixed(0) + ' W';
-      document.getElementById('dist-total-energy').textContent = 
+      document.getElementById('dist-total-energy').textContent =
         (data['PZEM_total_energy'] || 0).toFixed(3) + ' kWh';
     }
-
     // Reset cez Blynk V11 – simulácia (ak nechceš priamo volať ESP)
     async function resetPZEMEnergy() {
       if (!confirm("Naozaj resetovať celkovú spotrebu na PZEM meraniach?")) return;
@@ -1556,7 +1432,72 @@ HTML_TEMPLATE = r"""
       // Alebo priamo:
       // await fetch('http://IP_PZEM_ESP/blynk?V11=1');
     }
-
+    function renderAdvanced() {
+      const list = document.getElementById('settings-list');
+      list.innerHTML = '';
+      Object.keys(info).sort().forEach(key => {
+        const meta = info[key];
+        const col = document.createElement('div');
+        col.className = 'col-md-6 mb-3';
+        col.innerHTML = `
+          <div class="card p-3">
+            <label class="fw-bold">${meta[0]} (${key})</label>
+            <select id="action-${key}" class="form-select mb-2">
+              <option value="keep">Ponechať poslednú hodnotu</option>
+              <option value="to_0">Nastaviť na 0 po timeout</option>
+              <option value="to_dash">Nastaviť na - po timeout</option>
+              <option value="to_null">Nastaviť na null po timeout</option>
+              <option value="to_default">Nastaviť na default po timeout</option>
+            </select>
+            <input type="number" min="1" id="timeout-${key}" placeholder="Timeout (sekundy)" class="form-control mb-2" value="30">
+            <input type="text" id="default-${key}" placeholder="Default hodnota" class="form-control" style="display:none;">
+          </div>
+        `;
+        list.appendChild(col);
+        const actionSelect = col.querySelector(`#action-${key}`);
+        const timeoutInp = col.querySelector(`#timeout-${key}`);
+        const defaultInp = col.querySelector(`#default-${key}`);
+        actionSelect.addEventListener('change', () => {
+          const val = actionSelect.value;
+          timeoutInp.style.display = val === 'keep' ? 'none' : 'block';
+          defaultInp.style.display = val === 'to_default' ? 'block' : 'none';
+        });
+      });
+      // Load current configs
+      fetch('/advanced_settings')
+        .then(res => res.json())
+        .then(configs => {
+          Object.keys(configs).forEach(key => {
+            const sel = document.getElementById(`action-${key}`);
+            if (sel) sel.value = configs[key].action || 'keep';
+            const tim = document.getElementById(`timeout-${key}`);
+            if (tim) tim.value = configs[key].timeout || 30;
+            const def = document.getElementById(`default-${key}`);
+            if (def) def.value = configs[key].default_val || '';
+            if (sel) sel.dispatchEvent(new Event('change'));
+          });
+        });
+    }
+    function saveAdvanced() {
+      const configs = {};
+      Object.keys(info).forEach(key => {
+        const action = document.getElementById(`action-${key}`).value;
+        configs[key] = { action };
+        if (action !== 'keep') {
+          configs[key].timeout = parseInt(document.getElementById(`timeout-${key}`).value) || 30;
+        }
+        if (action === 'to_default') {
+          configs[key].default_val = document.getElementById(`default-${key}`).value || '-';
+        }
+      });
+      fetch('/advanced_settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(configs)
+      }).then(res => res.json()).then(json => {
+        alert(json.status === 'ok' ? 'Nastavenia uložené!' : 'Chyba');
+      });
+    }
     async function load() {
       try {
         const [d, i] = await Promise.all([fetch('/data'), fetch('/vpin_info')]);
@@ -1572,7 +1513,6 @@ HTML_TEMPLATE = r"""
             renderDistribucia();
           }
         document.getElementById('status').textContent = `Aktualizované: ${new Date().toLocaleTimeString('sk-SK')}`;
-
         fetch('/history/today')
         .then(res => res.json())
         .then(h => {
@@ -1584,24 +1524,20 @@ HTML_TEMPLATE = r"""
           document.getElementById('pv-daily').textContent = '0 kWh (dnes)';
           document.getElementById('load-daily').textContent = '0 kWh (dnes)';
         });
-
       } catch (e) {
         console.error("Chyba:", e);
         document.getElementById('status').textContent = 'Chyba pri načítaní dát';
       }
     }
-
     load();
     setInterval(load, REFRESH);
   </script>
 </body>
 </html>
 """
-
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
-
 if __name__ == "__main__":
     print("iHome dashboard beží na http://0.0.0.0:8000")
     app.run(host="0.0.0.0", port=8000, debug=False, threaded=True)

@@ -12,7 +12,7 @@
 #include <WiFiClient.h>
 
 // === Wi-Fi ===
-const char* ssid = "ESP";
+const char* ssid = "iHome";
 const char* pass = "202PuskaS";
 
 // === LOKÁLNY SERVER ===
