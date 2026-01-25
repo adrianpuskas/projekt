@@ -34,10 +34,12 @@ VPINS = {
     "V12": ("Celková spotreba energie (3F)", "Sieť", "kWh", "fas fa-bolt"),
     "V1": ("Režim meniča", "Ovládanie", "", "fas fa-cog"),
     "V110": ("Reset skriptu", "Ovládanie", "", "fas fa-redo"),
+    # senzory teploty a vlhkosti vzduchu
     "indoor_temp": ("Teplota vnútri", "Senzory", "°C", "fas fa-thermometer-half"),
     "indoor_humidity": ("Vlhkosť vnútri", "Senzory", "%", "fas fa-tint"),
     "outdoor_temp": ("Teplota vonku", "Senzory", "°C", "fas fa-thermometer-half"),
     "outdoor_humidity": ("Vlhkosť vonku", "Senzory", "%", "fas fa-tint"),
+    # BMS ovladanie ..
     "V21": ("Nabíjanie BMS", "BMS", "", "fas fa-plug"),
     "V22": ("Vybíjanie BMS", "BMS", "", "fas fa-bolt"),
     # PZEM-004T distribúcia
@@ -57,22 +59,77 @@ VPINS = {
     "PZEM_L3_energy": ("Energia L3", "Distribúcia", "kWh", "fas fa-battery-full"),
     "PZEM_total_power": ("Celkový výkon", "Distribúcia", "W", "fas fa-home"),
     "PZEM_total_energy": ("Celková spotreba", "Distribúcia", "kWh", "fas fa-chart-line"),
-}
+    # TOPENIE ↓
+    "topenie_rezim": ("Automatika / manual", "Topenie", "", "fas fa-redo"),
+    "wifiStatus": ("Status pripojenia WiFi", "Topenie", "", "fas fa-redo"),
+    
+    "teplota_tuv": ("Teplota TUV", "Topenie", "°C", "fas fa-thermometer-half"),
+    "teplota_kotla": ("Teplota kotla", "Topenie", "°C", "fas fa-thermometer-half"),
+    "teplota_dymovod": ("Teplota dymovodu", "Topenie", "°C", "fas fa-thermometer-half"),
+    
+    "teplota_vypnutie_cerpadla_kotol_pod": ("Vypnutie cerpala - Teplota kotla pod..", "Topenie", "°C", "fas fa-thermometer-half"),
+    "teplota_zapnutie_cerpadla_kotol_nad": ("Zapnutie cerpala - Teplota kotla nad..", "Topenie", "°C", "fas fa-thermometer-half"),
+    "teplota_ovladanie_cerpadla_dymovod": ("Vypnutie cerpala - Teplota dymovodu pod..", "Topenie", "°C", "fas fa-thermometer-half"),
+
+    "nastavenie_teplota_pozadovana_tuv": ("Pozadovana teplota TUV", "Topenie", "°C", "fas fa-thermometer-half"),
+    "nastavenie_teplota_tolerancia_tuv": ("Tolerancia teploty TUV", "Topenie", "°C", "fas fa-thermometer-half"),
+
+    "nastavenie_teplota_kotla_pracovna_radiatory": ("Pracovna teplota kotla do radiatorov", "Topenie", "°C", "fas fa-thermometer-half"),
+    "nastavenie_teplota_kotla_pracovna_tuv": ("Pracovna teplota kotla do TUV", "Topenie", "°C", "fas fa-thermometer-half"),
+
+    "ovladanie_rele_cerpadlo": ("Rele_cerpadlo", "Topenie", "", "fas fa-cog"),
+    "ovladanie_rele_tuv": ("Rele TUV", "Topenie", "", "fas fa-redo"),
+    "ovladanie_rele_radiatory": ("Rele radiatory", "Topenie", "", "fas fa-redo"),
+    "ovladanie_priorita_topenie": ("Priorita topenia", "Topenie", "", "fas fa-redo"),
+
+    "nastavenie_pracovna_teplota_kotla": ("Pracovna teplota kotla", "Topenie-kotol", "", "fas fa-redo"),
+    "poloha_dvierok_aktualna": ("Aktualna poloha dvierok", "Topenie_kotol", "%", "fas fa-tachometer-alt"),
+    "poloha_dvierok_pozadovana": ("Pozadovana poloha dvierok", "Topenie_kotol", "%", "fas fa-tachometer-alt"),
+
+ 
+  }
+
+# Extrahuj kľúče pre nastavenia topenia z VPINS (len tie, ktoré sú nastaviteľné – filter na názvy) PRE TOPENIE
+TOPENIE_KEYS = [
+    key for key, value in VPINS.items()
+    if value[1].startswith("Topenie")  # Kategória začína "Topenie"
+    and (key.startswith("nastavenie_") or key.startswith("teplota_vypnutie_") or key.startswith("teplota_zapnutie_") or key.startswith("teplota_ovladanie_"))
+]
+
 local_data = {}
 data_lock = threading.Lock()
 DB_PATH = "solar_data.db"
-
 def load_configs():
     if os.path.exists('advanced.json'):
         with open('advanced.json') as f:
             return json.load(f)
     return {}
-
 advanced_configs = load_configs()
+def load_topenie():
+    if os.path.exists('topenie.json'):
+        with open('topenie.json') as f:
+            return json.load(f)
+    # Tvoje defaultné hodnoty (uprav ich tu – napr. na 62,12,35,65,30,33,40)
+    return {
+        "nastavenie_teplota_pozadovana_tuv": 62,
+        "nastavenie_teplota_tolerancia_tuv": 12,
+        "nastavenie_teplota_kotla_pracovna_radiatory": 35,
+        "nastavenie_teplota_kotla_pracovna_tuv": 65,
+        "teplota_vypnutie_cerpadla_kotol_pod": 30,
+        "teplota_zapnutie_cerpadla_kotol_nad": 33,
+        "teplota_ovladanie_cerpadla_dymovod": 40
+    }
+
+topenie_configs = load_topenie()
 
 def _store_value(key: str, value):
     with data_lock:
         local_data[key] = {"value": value, "ts": datetime.utcnow().isoformat()}
+
+# Inicializuj local_data z topenie_configs pri štarte (len pre TOPENIE_KEYS) – PRESUNUTÉ SEM, POD DEFINÍCIU _store_value
+for key in TOPENIE_KEYS:
+    if key in topenie_configs:
+        _store_value(key, topenie_configs[key])
 
 def _get_snapshot():
     with data_lock:
@@ -97,17 +154,17 @@ def _get_snapshot():
                 elif config["action"] == "to_default":
                     snapshot[k] = config.get("default_val", "-")
         return snapshot
-
+    
 def get_history_and_energy(minutes=1440):
     if not os.path.exists(DB_PATH):
         return {"timestamps": [], "pv": [], "soc": [], "load": [], "grid": [], "energy": {"pv": 0, "load": 0, "charge": 0, "discharge": 0}}
-  
+ 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-  
+ 
     end_time = datetime.now()
     start_time = end_time - timedelta(minutes=minutes)
-  
+ 
     c.execute("""
         SELECT timestamp, pv_input_power, pv2_input_power, battery_capacity,
                ac_output_power, battery_power
@@ -115,31 +172,31 @@ def get_history_and_energy(minutes=1440):
         WHERE timestamp BETWEEN ? AND ?
         ORDER BY timestamp
     """, (start_time, end_time))
-  
+ 
     rows = c.fetchall()
     conn.close()
-  
+ 
     if not rows:
         return {"timestamps": [], "pv": [], "soc": [], "load": [], "grid": [], "energy": {"pv": 0, "load": 0, "charge": 0, "discharge": 0}}
-  
+ 
     if minutes <= 720:
         timestamps = [r[0][11:16] for r in rows]
     else:
         timestamps = [r[0][5:16] for r in rows]
-  
+ 
     pv = [round((float(r[1] or 0) + float(r[2] or 0))) for r in rows]
     soc = [float(r[3] or 0) for r in rows]
     load = [float(r[4] or 0) for r in rows]
     battery_powers = [float(r[5] or 0) for r in rows]
-  
+ 
     interval_kwh = 5 / 3600000.0
     pv_kwh = sum(pv) * interval_kwh
     load_kwh = sum(load) * interval_kwh
     charge_kwh = sum(bp for bp in battery_powers if bp > 0) * interval_kwh
     discharge_kwh = sum(-bp for bp in battery_powers if bp < 0) * interval_kwh
-  
+ 
     step = max(1, len(rows) // 150)
-  
+ 
     return {
         "timestamps": timestamps[::step],
         "pv": pv[::step],
@@ -153,6 +210,12 @@ def get_history_and_energy(minutes=1440):
             "discharge": round(discharge_kwh, 3),
         }
     }
+#doplnene pre riadenie ESP zariadeni
+@app.route('/get/<key>', methods=['GET'])
+def get_pin(key):
+    snapshot = _get_snapshot()
+    value = snapshot.get(key, "-")
+    return str(value)
 @app.route('/history/today', methods=['GET'])
 def history_today():
     now = datetime.now()
@@ -173,6 +236,7 @@ def history_custom():
         return jsonify(get_history_and_energy(minutes_diff))
     except:
         return jsonify({"error": "invalid format"}), 400
+    
 @app.route('/write', methods=['POST'])
 def write_pin():
     data = request.get_json(silent=True) or {}
@@ -185,7 +249,16 @@ def write_pin():
         if not key.startswith("V"):
             key = "V" + key
     _store_value(key, value)
+    if key in TOPENIE_KEYS:
+        topenie_configs[key] = value
+        with open('topenie.json', 'w') as f:  # Indentované pod if
+            json.dump(topenie_configs, f)
     return jsonify({"status": "ok", "key": key, "value": value})
+
+@app.route('/topenie_settings', methods=['GET'])
+def get_topenie():
+    return jsonify(topenie_configs)
+
 @app.route('/data', methods=['GET'])
 def get_data():
     return jsonify(_get_snapshot())
@@ -247,8 +320,8 @@ HTML_TEMPLATE = r"""
     .detail-group { border: 2px solid var(--primary); border-radius: 16px; padding: 12px; margin-bottom: 25px; background: rgba(30,30,30,0.6); }
     [data-bs-theme="light"] .detail-group { background: rgba(255,255,255,0.7); }
     .detail-group h4 { color: var(--primary); border-bottom: 1px solid var(--primary); padding-bottom: 8px; margin-bottom: 12px; text-align: center; font-size: 1.2rem; }
-    .section, .sub-section { display: none; }
-    .section.active, .sub-section.active { display: block; }
+    .section, .sub-section, .topenie-sub { display: none; }
+    .section.active, .sub-section.active, .topenie-sub.active { display: block; }
     .clickable-card { cursor: pointer; transition: all 0.3s ease; }
     .clickable-card:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(0,0,0,0.4) !important; border: 2px solid var(--primary); }
     .detail-card .key-value { color: var(--value-color) !important; font-size: 1.6rem !important; font-weight: bold; }
@@ -296,7 +369,7 @@ HTML_TEMPLATE = r"""
       box-shadow: 0 12px 40px rgba(0,0,0,0.6);
       z-index: 15; /* DOPLNENÉ: Vyššie ako flow-svg (1), ale nižšie ako inverter (20) */
     }
-   
+  
     .flow-svg {
       position: absolute;
       top: 0; left: 0;
@@ -330,7 +403,7 @@ HTML_TEMPLATE = r"""
       0%, 100% { opacity: 0.6; }
       50% { opacity: 1; }
     }
-   
+  
     @keyframes pulse-line {
       0%, 100% { opacity: 0.6; }
       50% { opacity: 1; }
@@ -396,9 +469,126 @@ HTML_TEMPLATE = r"""
       .component { width: 125px; padding: 16px; }
       .flow-dot { width: 16px; height: 16px; }
     }
+    /* Nové štýly pre Topenie sekciu */
+    .temp-indicator { 
+      position: relative; 
+      height: 150px; 
+      width: 50px; 
+      background: #333; 
+      border-radius: 25px; 
+      overflow: hidden; 
+      margin: 0 auto; 
+    }
+    .temp-fill { 
+      position: absolute; 
+      bottom: 0; 
+      width: 100%; 
+      transition: height 0.5s ease, background-color 0.5s ease; 
+    }
+    .temp-value { 
+      position: absolute; 
+      top: 50%; 
+      left: 50%; 
+      transform: translate(-50%, -50%); 
+      color: white; 
+      font-weight: bold; 
+      z-index: 2; 
+    }
+    .temp-cold { background: linear-gradient(to top, blue, lightblue); }
+    .temp-warm { background: linear-gradient(to top, orange, yellow); }
+    .temp-hot { background: linear-gradient(to top, red, darkred); }
+    .switch-label { font-size: 1.1rem; margin-bottom: 10px; }
+
+    /* ===== TEPLOTNÉ HORIZONTÁLNE BARY ===== */
+    .temp-bar {
+      width: 100%;
+      height: 14px;
+      background: #2a2a2a;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .temp-bar-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.6s ease, background-color 0.6s ease;
+      border-radius: 10px;
+    }
+
+    /* ===== BLYNK STYLE PREPÍNAČE ===== */
+    .switch-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+      margin-bottom: 16px;
+      background: var(--card);
+    }
+
+    .switch-label {
+      font-size: 1.1rem;
+      font-weight: 500;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .blynk-switch {
+      position: relative;
+      width: 200px;
+      height: 46px;
+      background: #2a2a2a;
+      border-radius: 30px;
+      display: flex;
+      overflow: hidden;
+      cursor: pointer;
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.6);
+    }
+
+    .switch-half {
+      flex: 1;
+      text-align: center;
+      line-height: 46px;
+      font-weight: bold;
+      color: #aaa;
+      z-index: 2;
+    }
+
+    .switch-slider {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: calc(50% - 6px);
+      height: 40px;
+      background: #dc3545;
+      border-radius: 25px;
+      transition: left 0.3s ease, background 0.3s ease;
+      z-index: 1;
+    }
+
+    .blynk-switch.on .switch-slider {
+      left: calc(50% + 3px);
+      background: #28a745;
+    }
+
+    .blynk-switch.on .right {
+      color: white;
+    }
+
+    .blynk-switch:not(.on) .left {
+      color: white;
+    }
+
+
   </style>
 </head>
 <body>
+  <!-- Toast container pre notifikácie -->
+  <div class="toast-container position-fixed top-0 end-0 p-3">
+  </div>
+
   <nav class="navbar navbar-expand-lg navbar-dark mb-3 shadow">
     <div class="container-fluid">
       <a class="navbar-brand" href="#" onclick="showMainSection('home')"><strong>iHome</strong></a>
@@ -412,6 +602,7 @@ HTML_TEMPLATE = r"""
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('topenie')">Topenie</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('distribucia')">Distribúcia</a></li>
           <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('advanced')">Advanced</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" onclick="showMainSection('test')">Test</a></li>
         </ul>
         <button id="theme-toggle" class="btn btn-outline-light"><i class="fas fa-moon"></i></button>
       </div>
@@ -449,7 +640,7 @@ HTML_TEMPLATE = r"""
           </div>
         </div>
       </div>
-      <div class="card shadow-lg mb-4 clickable-card" onclick="showMainSection('topenie')">
+      <div class="card shadow-lg mb-4 clickable-card" onclick="showMainSection('topenie'); showTopenieSub('prehled')">
         <div class="card-body py-4">
           <div class="row align-items-center">
             <div class="col-3 text-center"><i class="fas fa-fire fa-4x text-danger"></i></div>
@@ -476,7 +667,7 @@ HTML_TEMPLATE = r"""
         </div>
       </div>
     </div>
-   
+  
     <div id="fotovoltaika" class="section">
       <div class="container mb-4">
         <ul class="nav nav-pills nav-fill shadow rounded bg-dark">
@@ -730,7 +921,7 @@ HTML_TEMPLATE = r"""
                 </div>
               </div>
             </div>
-         
+        
           </div>
         </div>
       </div>
@@ -848,14 +1039,164 @@ HTML_TEMPLATE = r"""
       </div>
     </div>
     <div id="topenie" class="section">
-      <div class="container">
-        <h2 class="text-center mt-5 text-primary">Topenie</h2>
-        <p class="text-center text-muted mt-4">Zatiaľ žiadne dáta k dispozícii.</p>
+      <div class="container mb-4">
+        <ul class="nav nav-pills nav-fill shadow rounded bg-dark">
+          <li class="nav-item">
+            <a class="nav-link active" href="#" onclick="showTopenieSub('prehled')">Prehľad</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" onclick="showTopenieSub('nastavenia')">Nastavenia</a>
+          </li>
+        </ul>
+      </div>
+      <div id="topenie-prehled" class="topenie-sub active container py-4">
+
+        <h2 class="text-center mb-4 text-primary fw-bold">Topenie – Prehľad</h2>
+
+        <!-- ===== TEPLOTY ===== -->
+
+        <!-- Teplota TUV -->
+        <div class="card p-3 mb-3 shadow">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>Teplota TUV</strong>
+            <span class="fs-3 fw-bold" id="temp-tuv">- °C</span>
+          </div>
+          <div class="temp-bar">
+            <div class="temp-bar-fill" id="bar-tuv"></div>
+          </div>
+        </div>
+
+        <!-- Teplota kotla -->
+        <div class="card p-3 mb-3 shadow">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>Teplota kotla</strong>
+            <span class="fs-3 fw-bold" id="temp-kotol">- °C</span>
+          </div>
+          <div class="temp-bar">
+            <div class="temp-bar-fill" id="bar-kotol"></div>
+          </div>
+        </div>
+
+        <!-- Teplota dymovodu -->
+        <div class="card p-3 mb-4 shadow">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>Teplota dymovodu</strong>
+            <span class="fs-3 fw-bold" id="temp-dymovod">- °C</span>
+          </div>
+          <div class="temp-bar">
+            <div class="temp-bar-fill" id="bar-dymovod"></div>
+          </div>
+        </div>
+
+<!-- ===== PREPÍNAČE (PRESUNUTÉ SEM) ===== -->
+        <h4 class="text-center text-primary fw-bold mb-3">Ovládanie</h4>
+        <!-- Režim automatika / manuál -->
+        <div class="switch-card">
+          <div class="switch-label">Režim topenia</div>
+          <div class="blynk-switch" id="sw-rezim" onclick="toggleSwitch(this, 'topenie_rezim')">
+            <div class="switch-half left">Automatika</div>
+            <div class="switch-half right">Manuál</div>
+            <div class="switch-slider"></div>
+          </div>
+        </div>
+        <!-- Čerpadlo -->
+        <div class="switch-card">
+          <div class="switch-label">Čerpadlo kotla</div>
+          <div class="blynk-switch" id="sw-cerpadlo" onclick="toggleSwitch(this, 'ovladanie_rele_cerpadlo')">
+            <div class="switch-half left">VYP</div>
+            <div class="switch-half right">ZAP</div>
+            <div class="switch-slider"></div>
+          </div>
+        </div>
+        <!-- Ventil TUV -->
+        <div class="switch-card">
+          <div class="switch-label">Ventil TUV</div>
+          <div class="blynk-switch" id="sw-tuv" onclick="toggleSwitch(this, 'ovladanie_rele_tuv')">
+            <div class="switch-half left">VYP</div>
+            <div class="switch-half right">ZAP</div>
+            <div class="switch-slider"></div>
+          </div>
+        </div>
+        <!-- Ventil Radiátory -->
+        <div class="switch-card">
+          <div class="switch-label">Ventil Radiátory</div>
+          <div class="blynk-switch" id="sw-radiatory" onclick="toggleSwitch(this, 'ovladanie_rele_radiatory')">
+            <div class="switch-half left">VYP</div>
+            <div class="switch-half right">ZAP</div>
+            <div class="switch-slider"></div>
+          </div>
+        </div>
+        <!-- Priorita -->
+        <div class="switch-card">
+          <div class="switch-label">Priorita topenia</div>
+          <div class="blynk-switch" id="sw-priorita" onclick="toggleSwitch(this, 'ovladanie_priorita_topenie')">
+            <div class="switch-half left">Radiátory</div>
+            <div class="switch-half right">TUV</div>
+            <div class="switch-slider"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="topenie-nastavenia" class="topenie-sub">
+        <div class="container py-4">
+          <h2 class="text-center mb-5 text-primary fw-bold">Nastavenia topenia</h2>
+          <div class="card p-4 shadow mb-4">
+            <h4 class="text-primary mb-4">Nastavenia TUV</h4>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label>Požadovaná teplota TUV (°C)</label>
+                <input type="number" class="form-control" id="nastavenie_teplota_pozadovana_tuv">
+              </div>
+              <div class="col-md-6">
+                <label>Tolerancia teploty TUV (°C)</label>
+                <input type="number" class="form-control" id="nastavenie_teplota_tolerancia_tuv">
+              </div>
+            </div>
+          </div>
+          <div class="card p-4 shadow mb-4">
+            <h4 class="text-primary mb-4">Nastavenia kotla</h4>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label>Pracovná teplota kotla do radiátorov (°C)</label>
+                <input type="number" class="form-control" id="nastavenie_teplota_kotla_pracovna_radiatory">
+              </div>
+              <div class="col-md-6">
+                <label>Pracovná teplota kotla do TUV (°C)</label>
+                <input type="number" class="form-control" id="nastavenie_teplota_kotla_pracovna_tuv">
+              </div>
+            </div>
+          </div>
+          <div class="card p-4 shadow mb-5">
+            <h4 class="text-primary mb-4">Nastavenia čerpadla</h4>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label>Vypnutie čerpadla - teplota kotla pod (°C)</label>
+                <input type="number" class="form-control" id="teplota_vypnutie_cerpadla_kotol_pod">
+              </div>
+              <div class="col-md-4">
+                <label>Zapnutie čerpadla - teplota kotla nad (°C)</label>
+                <input type="number" class="form-control" id="teplota_zapnutie_cerpadla_kotol_nad">
+              </div>
+              <div class="col-md-4">
+                <label>Vypnutie čerpadla - teplota dymovodu pod (°C)</label>
+                <input type="number" class="form-control" id="teplota_ovladanie_cerpadla_dymovod">
+              </div>
+            </div>
+          </div>
+          <div class="row justify-content-center mt-4">
+            <div class="col-auto">
+              <button class="btn btn-outline-secondary custom-outline min-width-btn" onclick="loadTopenieSettings()">Načítať hodnoty</button>
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-primary min-width-btn" onclick="saveTopenieSettings()">Uložiť nastavenia</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div id="distribucia" class="section">
       <div class="container">
-        <h2 class="text-center mb-4 mt-4 text-primary fw-bold">Meranie distribúcie elektrickej energie</h2>
+        <h2 class="text-center mb-4 mt-4 text-primary fw-bold">Meranie distribúcia elektrickej energie</h2>
         <div class="row g-4" id="distribucia-content">
           <!-- Dynamicky vyplnené cez JS -->
         </div>
@@ -878,9 +1219,8 @@ HTML_TEMPLATE = r"""
           </button>
         </div>
       </div>
-    </div>  <!-- KONIEC DISTRIBUCIA -->
-
-    <div id="advanced" class="section">  <!-- TU ZAČÍNA ADVANCED -->
+    </div> <!-- KONIEC DISTRIBUCIA -->
+    <div id="advanced" class="section"> <!-- TU ZAČÍNA ADVANCED -->
       <div class="container">
         <h2 class="text-center mb-4">Advanced Settings</h2>
         <form id="advanced-form">
@@ -890,7 +1230,17 @@ HTML_TEMPLATE = r"""
           </div>
         </form>
       </div>
-    </div>  <!-- KONIEC ADVANCED -->
+    </div> <!-- KONIEC ADVANCED -->
+    <div id="test" class="section">
+      <div class="container">
+        <h2 class="text-center mt-5 text-primary">Test - Ovládanie Relé ESP01</h2>
+        <div class="text-center mt-4">
+          <p>Aktuálny stav: <strong id="relay-state">-</strong></p>
+          <button class="btn btn-success me-3" onclick="setRelay(1)">ON</button>
+          <button class="btn btn-danger" onclick="setRelay(0)">OFF</button>
+        </div>
+      </div>
+    </div>
   </div>
   <footer class="text-center py-3 mt-5">
     <small id="status">Načítavam...</small>
@@ -901,7 +1251,6 @@ HTML_TEMPLATE = r"""
     let lastLoaded = 'today'; // Default pri načítaní stránky: 'today'
     let data = {}, info = {};
     let charts = {};
- 
     const themeToggle = document.getElementById('theme-toggle');
     const htmlEl = document.documentElement;
     function setTheme(theme) {
@@ -921,7 +1270,10 @@ HTML_TEMPLATE = r"""
       document.querySelectorAll('.navbar .nav-link').forEach(l => l.classList.remove('active'));
       document.querySelector(`.navbar .nav-link[onclick="showMainSection('${id}')"]`)?.classList.add('active');
       if (id === 'fotovoltaika') showSubSection('home');
+      if (id === 'topenie') showTopenieSub('prehled');
       if (id === 'advanced') renderAdvanced();
+      if (id === 'test') updateRelayState();
+      if (id === 'topenie') updateTopenie();
     }
     function showSubSection(id) {
       document.querySelectorAll('#fotovoltaika .sub-section').forEach(s => s.classList.remove('active'));
@@ -940,6 +1292,32 @@ HTML_TEMPLATE = r"""
       }
       if (id === 'control') readSettings();
     }
+
+    function showSection(id, subId = '') {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      if (subId) showSubSection(subId);
+      if (id === 'topenie') updateTopenie();
+      load();
+    }
+
+    function showTopenieSub(id) {
+      document.querySelectorAll('.topenie-sub').forEach(s => s.classList.remove('active'));
+      document.getElementById(`topenie-${id}`).classList.add('active');
+      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+      event.target.classList.add('active');
+      if (id === 'nastavenia') {
+        clearInterval(refreshInterval);  // Pozastav auto-obnovu v nastaveniach
+      } else {
+        refreshInterval = setInterval(load, REFRESH);  // Obnov pri odchode
+      }
+    }
+
+    function toggleTheme() {
+      isDark = !isDark;
+      document.documentElement.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
+    }
+
     function updateHomeSummary() {
       const v65 = data['V65'];
       const v76 = data['V76'];
@@ -1087,20 +1465,20 @@ HTML_TEMPLATE = r"""
         // Okraje invertera – kam majú čiary mieriť
         const invTop = (invRect.top + 15 - contRect.top) / contRect.height * 100; // trochu dole od vrchu
         const invBottom = (invRect.bottom - 15 - contRect.top) / contRect.height * 100; // trochu hore od spodku
-        function getComponentTopCenter(el) {
-          if (!el) return { x: 50, y: 90 };
-          const rect = el.getBoundingClientRect();
-          return {
-            x: (rect.left + rect.width / 2 - contRect.left) / contRect.width * 100,
-            y: (rect.top - contRect.top) / contRect.height * 100 // horný okraj komponentu!
-          };
-        }
         function getComponentBottomCenter(el) {
           if (!el) return { x: 50, y: 10 };
           const rect = el.getBoundingClientRect();
           return {
             x: (rect.left + rect.width / 2 - contRect.left) / contRect.width * 100,
             y: (rect.bottom - contRect.top) / contRect.height * 100 // spodný okraj
+          };
+        }
+        function getComponentTopCenter(el) {
+          if (!el) return { x: 50, y: 90 };
+          const rect = el.getBoundingClientRect();
+          return {
+            x: (rect.left + rect.width / 2 - contRect.left) / contRect.width * 100,
+            y: (rect.top - contRect.top) / contRect.height * 100 // horný okraj komponentu!
           };
         }
         const solarPos = getComponentBottomCenter(solarComp); // PV zhora → spodok komponentu
@@ -1241,7 +1619,10 @@ HTML_TEMPLATE = r"""
     async function loadCustom() {
       const from = document.getElementById('date-from').value;
       const to = document.getElementById('date-to').value;
-      if (!from || !to) { alert("Vyber oba dátumy"); return; }
+      if (!from || !to) { 
+        showToast("Vyber oba dátumy", "error");
+        return; 
+      }
       document.querySelectorAll('#time-buttons .btn').forEach(b => b.classList.remove('active'));
       lastLoaded = 'custom'; // Pamätaj si custom
       const res = await fetch(`/history/custom?start=${from}&end=${to}`);
@@ -1262,12 +1643,12 @@ HTML_TEMPLATE = r"""
         });
         const result = await response.json();
         if (result.status === "success") {
-          alert("✓ " + result.message);
+          showToast("✓ " + result.message, "success");
         } else {
-          alert("✗ Chyba: " + result.message);
+          showToast("✗ Chyba: " + result.message, "error");
         }
       } catch (e) {
-        alert("✗ Nepodarilo sa spojiť s BMS ovládačom. Je Main.py spustený?");
+        showToast("✗ Nepodarilo sa spojiť s BMS ovládačom. Je Main.py spustený?", "error");
       }
       load();
     }
@@ -1289,14 +1670,26 @@ HTML_TEMPLATE = r"""
           document.getElementById('v95').value = s.v95 || 1;
           document.getElementById('v98').value = s.v98 || 50;
           document.getElementById('v93').value = s.v93 || 1;
-          alert("✓ Nastavenia načítané z meniča");
+          showToast("✓ Nastavenia načítané z meniča", "success");
         } else {
-          alert("✗ " + json.message);
+          showToast("✗ " + json.message, "error");
         }
       } catch (e) {
-        alert("✗ Chyba spojenia s Main.py (port 8002)");
+        showToast("✗ Chyba spojenia s Main.py (port 8002)", "error");
       }
     }
+
+    async function loadTopenieSettings() {
+      try {
+        const res = await fetch('/data');  // Načíta čerstvé dáta zo servera
+        data = await res.json();  // Aktualizuj lokálne data
+        updateTopenieSettings();  // Aktualizuj inputy z nových dát
+        showToast("Hodnoty načítané zo servera", "success");
+      } catch (e) {
+        showToast("Chyba pri načítaní hodnôt", "error");
+      }
+    }
+
     async function quickSetPriority(value) {
       // Vizálne označenie, že sa niečo deje
       const buttons = document.querySelectorAll('#sub-home button[onclick^="quickSetPriority"]');
@@ -1328,7 +1721,6 @@ HTML_TEMPLATE = r"""
       }, 2000);
     }
     async function writeSettings() {
-      if (!confirm("Naozaj chceš zapísať tieto nastavenia do meniča?")) return;
       const settings = {
         v86: parseFloat(document.getElementById('v86').value),
         v87: parseFloat(document.getElementById('v87').value),
@@ -1350,22 +1742,27 @@ HTML_TEMPLATE = r"""
           body: JSON.stringify(settings)
         });
         const json = await res.json();
-        alert(json.status === "success" ? "✓ " + json.message : "✗ " + json.message);
         if (json.status === "success") {
+          showToast("✓ " + json.message, "success");
           setTimeout(() => readSettings(), 3000);
+        } else {
+          showToast("✗ " + json.message, "error");
         }
       } catch (e) {
-        alert("✗ Chyba spojenia s Main.py");
+        showToast("✗ Chyba spojenia s Main.py", "error");
       }
     }
     async function restartScript() {
-      if (!confirm("Naozaj reštartovať Main.py?")) return;
       try {
         const res = await fetch('http://192.168.3.84:8002/control/restart', {method: 'POST'});
         const json = await res.json();
-        alert(json.status === "success" ? "✓ " + json.message : "✗ Chyba");
+        if (json.status === "success") {
+          showToast("✓ " + json.message, "success");
+        } else {
+          showToast("✗ Chyba", "error");
+        }
       } catch (e) {
-        alert("✗ Chyba spojenia s Main.py");
+        showToast("✗ Chyba spojenia s Main.py", "error");
       }
     }
     function updateHomeDistribucia() {
@@ -1380,7 +1777,7 @@ HTML_TEMPLATE = r"""
       document.getElementById('home-total-power').textContent = total.toFixed(0) + ' W';
       document.getElementById('home-total-energy').textContent = energy.toFixed(3) + ' kWh';
     }
-    function renderDistribucia() {
+function renderDistribucia() {
       const container = document.getElementById('distribucia-content');
       container.innerHTML = '';
       const faze = ['L1', 'L2', 'L3'];
@@ -1394,7 +1791,7 @@ HTML_TEMPLATE = r"""
           <div class="col-md-4 col-lg-4">
             <div class="card shadow text-center p-4">
               <h4 class="text-primary mb-4">Fáza ${f}</h4>
-             
+            
               <!-- Prvý riadok: Napätie | Prúd | Výkon -->
               <div class="row g-3 mb-4">
                 <div class="col-4">
@@ -1426,9 +1823,8 @@ HTML_TEMPLATE = r"""
     }
     // Reset cez Blynk V11 – simulácia (ak nechceš priamo volať ESP)
     async function resetPZEMEnergy() {
-      if (!confirm("Naozaj resetovať celkovú spotrebu na PZEM meraniach?")) return;
       // Tu môžeš buď poslať na Blynk V11, alebo priamo na ESP ak máš endpoint
-      alert("Reset odoslaný (funguje cez Blynk tlačidlo V11)");
+      showToast("Reset odoslaný (funguje cez Blynk tlačidlo V11)", "info");
       // Alebo priamo:
       // await fetch('http://IP_PZEM_ESP/blynk?V11=1');
     }
@@ -1444,10 +1840,10 @@ HTML_TEMPLATE = r"""
             <label class="fw-bold">${meta[0]} (${key})</label>
             <select id="action-${key}" class="form-select mb-2">
               <option value="keep">Ponechať poslednú hodnotu</option>
-              <option value="to_0">Nastaviť na 0 po timeout</option>
-              <option value="to_dash">Nastaviť na - po timeout</option>
-              <option value="to_null">Nastaviť na null po timeout</option>
-              <option value="to_default">Nastaviť na default po timeout</option>
+              <option value="to_0">Nastaviť na 0 po nast. čase (sec)</option>
+              <option value="to_dash">Nastaviť na - po nast. čase (sec)</option>
+              <option value="to_null">Nastaviť na null po nast. čase (sec)</option>
+              <option value="to_default">Nastaviť na default po nast. čase (sec)</option>
             </select>
             <input type="number" min="1" id="timeout-${key}" placeholder="Timeout (sekundy)" class="form-control mb-2" value="30">
             <input type="text" id="default-${key}" placeholder="Default hodnota" class="form-control" style="display:none;">
@@ -1495,9 +1891,169 @@ HTML_TEMPLATE = r"""
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(configs)
       }).then(res => res.json()).then(json => {
-        alert(json.status === 'ok' ? 'Nastavenia uložené!' : 'Chyba');
+        if (json.status === 'ok') {
+          showToast('Nastavenia uložené!', "success");
+        } else {
+          showToast('Chyba', "error");
+        }
       });
     }
+    // Funkcie pre Test sekciu
+    async function setRelay(value) {
+      try {
+        const response = await fetch('/write', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({key: 'esp1_relay', value: value})
+        });
+        const result = await response.json();
+        if (result.status === "ok") {
+          updateRelayState();
+          showToast("Relé nastavené na " + (value ? "ON" : "OFF"), "success");
+        } else {
+          showToast("Chyba pri nastavovaní relé", "error");
+        }
+      } catch (e) {
+        showToast("Chyba spojenia s serverom", "error");
+      }
+    }
+    async function updateRelayState() {
+      try {
+        const res = await fetch('/get/esp1_relay');
+        const state = await res.text();
+        document.getElementById('relay-state').textContent = state == '1' ? 'ON' : (state == '0' ? 'OFF' : '-');
+      } catch (e) {
+        document.getElementById('relay-state').textContent = '-';
+      }
+    }
+    // Funkcie pre Topenie sekciu
+    // Periodicky obnovuje len teploty zo senzorov (textové prvky)
+    function updateTopenieSensors() {
+
+      const tuvTemp = parseFloat(data['teplota_tuv']) || 0;
+      const kotolTemp = parseFloat(data['teplota_kotla']) || 0;
+      const dymovodTemp = parseFloat(data['teplota_dymovod']) || 0;
+
+      // ---- LEN AK EXISTUJÚ PRVKY, TAK DO NICH ZAPISUJEME ----
+
+      const elTuv = document.getElementById('temp-tuv');
+      const elKotol = document.getElementById('temp-kotol');
+      const elDym = document.getElementById('temp-dymovod');
+
+      if (elTuv) elTuv.textContent = tuvTemp.toFixed(1) + ' °C';
+      if (elKotol) elKotol.textContent = kotolTemp.toFixed(1) + ' °C';
+      if (elDym) elDym.textContent = dymovodTemp.toFixed(1) + ' °C';
+
+      // ---- TEPLOTNÉ BARY (LEN AK EXISTUJÚ) ----
+      updateTempBarSafe(tuvTemp, "bar-tuv", 90);
+      updateTempBarSafe(kotolTemp, "bar-kotol", 100);
+      updateTempBarSafe(dymovodTemp, "bar-dymovod", 200);
+
+      // ---- PREPÍNAČE (LEN AK EXISTUJÚ) ----
+      setSwitchSafe("sw-rezim", data.topenie_rezim);
+      setSwitchSafe("sw-cerpadlo", data.ovladanie_rele_cerpadlo);
+      setSwitchSafe("sw-tuv", data.ovladanie_rele_tuv);
+      setSwitchSafe("sw-radiatory", data.ovladanie_rele_radiatory);
+      setSwitchSafe("sw-priorita", data.ovladanie_priorita_topenie);
+    }
+
+
+
+
+    // Obnovuje inputy nastavení len pri vstupe do sekcie alebo po uložení
+    function updateTopenieSettings() {
+      document.getElementById('nastavenie_teplota_pozadovana_tuv').value = data['nastavenie_teplota_pozadovana_tuv'] || '';
+      document.getElementById('nastavenie_teplota_tolerancia_tuv').value = data['nastavenie_teplota_tolerancia_tuv'] || '';
+      document.getElementById('nastavenie_teplota_kotla_pracovna_radiatory').value = data['nastavenie_teplota_kotla_pracovna_radiatory'] || '';
+      document.getElementById('nastavenie_teplota_kotla_pracovna_tuv').value = data['nastavenie_teplota_kotla_pracovna_tuv'] || '';
+      document.getElementById('teplota_vypnutie_cerpadla_kotol_pod').value = data['teplota_vypnutie_cerpadla_kotol_pod'] || '';
+      document.getElementById('teplota_zapnutie_cerpadla_kotol_nad').value = data['teplota_zapnutie_cerpadla_kotol_nad'] || '';
+      document.getElementById('teplota_ovladanie_cerpadla_dymovod').value = data['teplota_ovladanie_cerpadla_dymovod'] || '';
+    }
+    // Obnovuje ovládacie prvky (switche) v sekcii Ovládanie
+    function updateTopenieOvl() {
+      // Prepnutie režimu
+      document.getElementById('topenie-rezim-switch').checked = data['topenie_rezim'] === 1;
+
+      // Prepnutie čerpadla
+      document.getElementById('ovladanie-rele-cerpadlo-switch').checked = data['ovladanie_rele_cerpadlo'] === 1;
+
+      // Prepnutie TUV ventilu
+      document.getElementById('ovladanie-rele-tuv-switch').checked = data['ovladanie_rele_tuv'] === 1;
+
+      // Prepnutie radiátorov ventilu
+      document.getElementById('ovladanie-rele-radiatory-switch').checked = data['ovladanie_rele_radiatory'] === 1;
+
+      // Prepnutie priority (Radiátory / TUV)
+      document.getElementById('ovladanie-priorita-switch').checked = data['ovladanie_priorita_topenie'] === 1;
+    }
+
+    // Pôvodná funkcia – volá obe časti (používa sa pri vstupe do sekcie)
+    function updateTopenie() {
+      updateTopenieSensors();  // Teploty
+      updateTopenieOvl();      // Switche ovládania
+    }
+
+    async function setTopenieRezim(value) {
+      await fetch('/write', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: 'topenie_rezim', value: value ? 1 : 0})
+      });
+      showToast(`Režim zmenený na ${value ? 'Manuál' : 'Automatika'}`, "success");
+      load();
+    }
+
+    async function setTopenieRele(key, value) {
+      await fetch('/write', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: key, value: value ? 1 : 0})
+      });
+      showToast(`${key.split('_').pop().toUpperCase()} nastavené na ${value ? 'ON' : 'OFF'}`, "success");
+      load();
+    }
+
+    async function setTopeniePriorita(value) {
+      await fetch('/write', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: 'ovladanie_priorita_topenie', value: value ? 1 : 0})
+      });
+      showToast(`Priorita zmenená na ${value ? 'TUV' : 'Radiátory'}`, "success");
+      load();
+    }
+
+    async function saveTopenieSettings() {
+      const settings = {
+        nastavenie_teplota_pozadovana_tuv: parseFloat(document.getElementById('nastavenie_teplota_pozadovana_tuv').value),
+        nastavenie_teplota_tolerancia_tuv: parseFloat(document.getElementById('nastavenie_teplota_tolerancia_tuv').value),
+        nastavenie_teplota_kotla_pracovna_radiatory: parseFloat(document.getElementById('nastavenie_teplota_kotla_pracovna_radiatory').value),
+        nastavenie_teplota_kotla_pracovna_tuv: parseFloat(document.getElementById('nastavenie_teplota_kotla_pracovna_tuv').value),
+        teplota_vypnutie_cerpadla_kotol_pod: parseFloat(document.getElementById('teplota_vypnutie_cerpadla_kotol_pod').value),
+        teplota_zapnutie_cerpadla_kotol_nad: parseFloat(document.getElementById('teplota_zapnutie_cerpadla_kotol_nad').value),
+        teplota_ovladanie_cerpadla_dymovod: parseFloat(document.getElementById('teplota_ovladanie_cerpadla_dymovod').value)
+      };
+      
+      // Ulož nové hodnoty lokálne do data[] ihneď (pre okamžitú aktualizáciu UI)
+      for (const [key, value] of Object.entries(settings)) {
+        data[key] = value;  // Aktualizuj lokálne data
+        await fetch('/write', {  // Pošli na server
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({key: key, value: value})
+        });
+      }
+      
+      showToast("Nastavenia topenia uložené!", "success");
+      
+      // Aktualizuj inputy ihneď z lokálnych data (nové hodnoty)
+      updateTopenieSettings();
+      
+      // Asynchrónne obnov celé data zo servera na pozadí (bez prepisovania inputov ihneď)
+      setTimeout(load, 1000);  // Čakaj chvíľu, aby server stihol uložiť
+    }
+
     async function load() {
       try {
         const [d, i] = await Promise.all([fetch('/data'), fetch('/vpin_info')]);
@@ -1512,6 +2068,17 @@ HTML_TEMPLATE = r"""
           if (document.getElementById('distribucia')?.classList.contains('active')) {
             renderDistribucia();
           }
+        if (document.getElementById('test')?.classList.contains('active')) {
+          updateRelayState();
+        }
+        if (document.getElementById('topenie')?.classList.contains('active')) {
+          updateTopenieSensors();
+          updateTopenieOvl();  // Pridaj, ak treba switche
+          // Odstránené: if (document.getElementById('topenie-nastavenia').classList.contains('active')) { updateTopenieSettings(); }
+          // Namiesto toho: Používateľ klikne "Načítať" manuálne
+        }
+          
+        
         document.getElementById('status').textContent = `Aktualizované: ${new Date().toLocaleTimeString('sk-SK')}`;
         fetch('/history/today')
         .then(res => res.json())
@@ -1529,6 +2096,105 @@ HTML_TEMPLATE = r"""
         document.getElementById('status').textContent = 'Chyba pri načítaní dát';
       }
     }
+
+    // Funkcia pre zobrazenie toastu
+    function showToast(message, type = 'info') {
+      const toastContainer = document.querySelector('.toast-container');
+      const toastEl = document.createElement('div');
+      toastEl.classList.add('toast', 'align-items-center', 'border-0');
+      let bgClass = 'text-bg-primary'; // default info
+      if (type === 'success') bgClass = 'text-bg-success';
+      if (type === 'error') bgClass = 'text-bg-danger';
+      toastEl.classList.add(bgClass);
+      toastEl.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">${message}</div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+      `;
+      toastContainer.appendChild(toastEl);
+      const toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 3000 });
+      toast.show();
+      toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+    }
+
+    function updateTempBar(value, textId, barId, maxTemp = 120) {
+      let temp = parseFloat(value) || 0;
+      document.getElementById(textId).innerText = temp + " °C";
+
+      let percent = Math.min(100, (temp / maxTemp) * 100);
+
+      let bar = document.getElementById(barId);
+      bar.style.width = percent + "%";
+
+      if (temp < 40) {
+        bar.style.background = "linear-gradient(to right, #0dcaf0, #6ee7ff)";
+      } else if (temp < 70) {
+        bar.style.background = "linear-gradient(to right, #ffc107, #ffdd55)";
+      } else {
+        bar.style.background = "linear-gradient(to right, #dc3545, #ff6b6b)";
+      }
+    }
+
+    function setSwitch(id, value) {
+      let sw = document.getElementById(id);
+      if (!sw) return;
+
+      if (String(value) === "1") {
+        sw.classList.add("on");
+      } else {
+        sw.classList.remove("on");
+      }
+    }
+
+    function toggleSwitch(el, key) {
+      const isOn = el.classList.contains("on");
+      if (isOn) {
+        el.classList.remove("on");
+        sendValue(key, 0);
+      } else {
+        el.classList.add("on");
+        sendValue(key, 1);
+      }
+    }
+
+    function sendValue(key, value) {
+      fetch("/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: key, value: value })
+      });
+    }
+
+    function updateTempBarSafe(temp, barId, maxTemp) {
+      const bar = document.getElementById(barId);
+      if (!bar) return;
+
+      let percent = Math.min(100, (temp / maxTemp) * 100);
+      bar.style.width = percent + "%";
+
+      if (temp < 40) {
+        bar.style.background = "linear-gradient(to right, #0dcaf0, #6ee7ff)";
+      } else if (temp < 70) {
+        bar.style.background = "linear-gradient(to right, #ffc107, #ffdd55)";
+      } else {
+        bar.style.background = "linear-gradient(to right, #dc3545, #ff6b6b)";
+      }
+    }
+
+    function setSwitchSafe(id, value) {
+      const sw = document.getElementById(id);
+      if (!sw) return;
+
+      if (String(value) === "1") {
+        sw.classList.add("on");
+      } else {
+        sw.classList.remove("on");
+      }
+    }
+
+
+
     load();
     setInterval(load, REFRESH);
   </script>
