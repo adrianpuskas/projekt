@@ -59,6 +59,7 @@ VPINS = {
     "PZEM_L3_energy": ("Energia L3", "Distribúcia", "kWh", "fas fa-battery-full"),
     "PZEM_total_power": ("Celkový výkon", "Distribúcia", "W", "fas fa-home"),
     "PZEM_total_energy": ("Celková spotreba", "Distribúcia", "kWh", "fas fa-chart-line"),
+    "PZEM_reset_energy": ("Tlačidlo resetu spotreby pzem004t", "Distribúcia", "", "fas fa-chart-line"),
     # TOPENIE ↓
     "topenie_rezim": ("Automatika / manual", "Topenie", "", "fas fa-redo"),
     "wifiStatus": ("Status pripojenia WiFi", "Topenie", "", "fas fa-redo"),
@@ -85,7 +86,10 @@ VPINS = {
     "nastavenie_pracovna_teplota_kotla": ("Pracovna teplota kotla", "Topenie-kotol", "", "fas fa-redo"),
     "poloha_dvierok_aktualna": ("Aktualna poloha dvierok", "Topenie_kotol", "%", "fas fa-tachometer-alt"),
     "poloha_dvierok_pozadovana": ("Pozadovana poloha dvierok", "Topenie_kotol", "%", "fas fa-tachometer-alt"),
-
+    "topenie_kotol_rezim": ("Automatika / manual", "Topenie-kotol", "", "fas fa-redo"),
+    "wifiStatus_kotol": ("Status pripojenia WiFi", "Topenie-kotol", "", "fas fa-redo"),
+    "ovladanie_inicializacia": ("Tlacidlo inicializacie krokov motora", "Topenie-kotol", "", "fas fa-tachometer-alt"),
+    "ovladanie_manualne_zatvorenie_dvierok": ("Tlacidlo manualneho zatvorenia dvierok z flask servera na 0%", "Topenie-kotol", "", "fas fa-redo"),
  
   }
 
@@ -582,6 +586,217 @@ HTML_TEMPLATE = r"""
     }
 
 
+    /* Všeobecné vylepšenia pre sekciu Topenie */
+    #topenie-prehled {
+      padding: 10px 0; /* Ešte menej paddingu zhora/dole */
+      max-width: 100%; /* Zabráň širokým okrajom */
+    }
+
+    /* Teplotné karty – moderné, s ikonami a gradientmi */
+    .temp-card {
+      background: var(--card);
+      border-radius: 8px; /* Menší border-radius pre tenšie orámovanie */
+      box-shadow: 0 1px 5px rgba(0,0,0,0.1); /* Veľmi jemný tieň, menej "široký" efekt */
+      padding: 10px; /* Menej vnútorného paddingu */
+      margin: 0; /* Odstráň automatické margíny */
+      background: rgba(0,0,0,0.3); /* Tmavší background pre kontrast, ale kompaktnejší */
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .temp-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    }
+
+    .temp-header {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start; /* Zarovnaj doľava pre kompaktnosť */
+      margin-bottom: 6px; /* Menej medzery pod headerom */
+    }
+
+    .temp-title {
+      font-weight: 600;
+      font-size: 0.95rem; /* Trochu menší text */
+      color: var(--text);
+    }
+
+    .temp-value {
+      font-size: 1.4rem; /* Menší na mobile */
+      font-weight: bold;
+      color: var(--primary);
+      margin-left: auto; /* Push value doprava */
+    }
+
+    .temp-icon {
+      font-size: 1.5rem;
+      color: var(--primary);
+      margin-right: 8px;
+    }
+
+    /* Teplotný bar – gradienty, animácia pulzu pri vysokých teplotách */
+    .temp-bar {
+      height: 10px; /* Ešte tenší bar */
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      margin-top: 4px;
+    }
+
+    .temp-bar-fill {
+      height: 100%;
+      transition: width 0.5s ease, background 0.5s ease;
+      border-radius: 4px;
+    }
+
+    .temp-bar-fill.low { background: linear-gradient(90deg, #0dcaf0, #6ee7ff); }
+    .temp-bar-fill.medium { background: linear-gradient(90deg, #ffc107, #ffdd55); animation: pulse-glow 2s infinite ease-in-out; }
+    .temp-bar-fill.high { background: linear-gradient(90deg, #dc3545, #ff6b6b); animation: pulse-glow 1.5s infinite ease-in-out; }
+
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.8; }
+      50% { opacity: 1; box-shadow: 0 0 10px currentColor; }
+    }
+
+    /* Prepínače – vylepšený Blynk štýl s animáciami a hover */
+    .switch-card {
+      background: var(--card);
+      border-radius: 8px; /* Menší border-radius pre tenšie orámovanie */
+      box-shadow: 0 1px 5px rgba(0,0,0,0.1); /* Veľmi jemný tieň */
+      padding: 10px; /* Menej vnútorného paddingu */
+      transition: transform 0.3s ease;
+      cursor: pointer;
+      margin: 0; /* Odstráň margíny pre menšie medzery */
+      background: rgba(0,0,0,0.3); /* Kompaktnejší background */
+    }
+
+    .switch-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    }
+
+    .switch-label {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      text-align: center;
+      color: var(--text);
+    }
+
+    .blynk-switch {
+      width: 130px; /* Menší switch */
+      height: 34px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 17px;
+      display: flex;
+      margin: 0 auto;
+      position: relative;
+      transition: background 0.3s ease;
+    }
+
+    .blynk-switch:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .switch-half {
+      flex: 1;
+      text-align: center;
+      line-height: 34px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #aaa;
+      transition: color 0.3s ease;
+      z-index: 2;
+    }
+
+    .switch-slider {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: calc(50% - 4px);
+      height: 30px;
+      border-radius: 15px;
+      background: #dc3545; /* OFF: červená */
+      transition: left 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      z-index: 1;
+    }
+
+    .blynk-switch.on .switch-slider {
+      left: calc(50% + 2px);
+      background: #28a745; /* ON: zelená */
+      box-shadow: 0 2px 8px rgba(40,167,69,0.5);
+    }
+
+    .blynk-switch.on .right { color: white; }
+    .blynk-switch:not(.on) .left { color: white; }
+
+    /* Grid úpravy: menšie medzery, 2 vedľa seba na mobile */
+    .row.g-2 {
+      --bs-gutter-x: 0.5rem; /* Veľmi malé horizontálne medzery */
+      --bs-gutter-y: 0.5rem; /* Malé vertikálne medzery */
+    }
+
+    .switch-row {
+      justify-content: center; /* Centrovanie celého riadku */
+      margin: 0 auto; /* Centrovanie na stránke */
+      max-width: 90%; /* Obmedz šírku, aby neboli rozhádzané do strán */
+    }
+
+    .switch-row .col-6 {
+      padding-left: 0.25rem;
+      padding-right: 0.25rem; /* Menšie paddingy medzi stĺpcami */
+    }
+
+    /* Na mobile (telefóne): 2 vedľa seba */
+    @media (max-width: 767px) {
+      .switch-row .col-6 {
+        flex: 0 0 50%;
+        max-width: 50%;
+      }
+      .switch-card {
+        max-width: 100%; /* Plná šírka v stĺpci */
+      }
+      .temp-value { font-size: 1.2rem; }
+      .blynk-switch { width: 110px; height: 30px; }
+      .switch-half { line-height: 30px; font-size: 0.75rem; }
+      .switch-slider { height: 26px; }
+    }
+
+    /* Na PC: 3 vedľa seba pre lepší layout (ak je 5 prvkov, posledné sa zarovnajú) */
+    @media (min-width: 768px) {
+      .switch-row {
+        justify-content: center;
+      }
+      .switch-row .col-md-4 {
+        flex: 0 0 33.333%;
+        max-width: 33.333%;
+      }
+      .switch-card {
+        max-width: 280px;
+        margin: 0 auto;
+      }
+    }
+
+    /* Responsivita pre teploty */
+    @media (max-width: 768px) {
+      .temp-card, .switch-card {
+        margin-bottom: 8px; /* Menšie margíny na mobile */
+      }
+      
+      .temp-value { font-size: 1.3rem; }
+      .blynk-switch { width: 120px; height: 32px; }
+      .switch-half { line-height: 32px; font-size: 0.8rem; }
+      .switch-slider { height: 28px; }
+    }
+
+    @media (min-width: 769px) {
+      #topenie-prehled .row {
+        justify-content: center;
+      }
+    }
+
   </style>
 </head>
 <body>
@@ -643,8 +858,39 @@ HTML_TEMPLATE = r"""
       <div class="card shadow-lg mb-4 clickable-card" onclick="showMainSection('topenie'); showTopenieSub('prehled')">
         <div class="card-body py-4">
           <div class="row align-items-center">
-            <div class="col-3 text-center"><i class="fas fa-fire fa-4x text-danger"></i></div>
-            <div class="col-9"><h4 class="mb-0">Topenie</h4><p class="text-muted mb-0">Zatiaľ žiadne dáta</p></div>
+            <div class="col-3 text-center">
+              <i class="fas fa-fire fa-4x text-danger"></i>
+            </div>
+            <div class="col-9">
+              <!-- Názov s WiFi statusom hneď vedľa -->
+              <div class="d-flex align-items-center mb-3 gap-3"> 
+                <h4 class="mb-0">Topenie</h4>
+              </div>
+              
+              <!-- 2x2 mriežka s hodnotami -->
+              <div class="row g-3">
+                <!-- Vlavo hore: Teplota kotla -->
+                <div class="col-6">
+                  <div class="text-muted small">Kotol</div>
+                  <div class="fs-4 fw-bold text-primary" id="home-kotol-temp">-</div>
+                </div>
+                <!-- Vpravo hore: Teplota TUV -->
+                <div class="col-6">
+                  <div class="text-muted small">TUV</div>
+                  <div class="fs-4 fw-bold text-success" id="home-tuv-temp">-</div>
+                </div>
+                <!-- Vlavo dole: Teplota dymovodu -->
+                <div class="col-6">
+                  <div class="text-muted small">Dymovod</div>
+                  <div class="fs-4 fw-bold text-warning" id="home-dymovod-temp">-</div>
+                </div>
+                <!-- Vpravo dole: Poloha dvierok -->
+                <div class="col-6">
+                  <div class="text-muted small">Dvierka</div>
+                  <div class="fs-4 fw-bold text-info" id="home-dvierka-pos">-</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1049,94 +1295,124 @@ HTML_TEMPLATE = r"""
           </li>
         </ul>
       </div>
-      <div id="topenie-prehled" class="topenie-sub active container py-4">
-
+      <div id="topenie-prehled" class="topenie-sub active container py-3">
         <h2 class="text-center mb-4 text-primary fw-bold">Topenie – Prehľad</h2>
 
-        <!-- ===== TEPLOTY ===== -->
+        <!-- ===== TEPLOTY + DVIERKA ===== -->
+        <div class="row justify-content-center g-3">
+          <div class="col-6 col-lg-3 mb-2">
+            <div class="card p-3 shadow-sm" style="height: 120px;">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="small">Teplota TUV</strong>
+                <span class="fs-4 fw-bold" id="temp-tuv">- °C</span>
+              </div>
+              <div class="temp-bar">
+                <div class="temp-bar-fill" id="bar-tuv"></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3 mb-2">
+            <div class="card p-3 shadow-sm" style="height: 120px;">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="small">Kotol</strong>
+                <span class="fs-4 fw-bold" id="temp-kotol">- °C</span>
+              </div>
+              <div class="temp-bar">
+                <div class="temp-bar-fill" id="bar-kotol"></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3 mb-2">
+            <div class="card p-3 shadow-sm" style="height: 120px;">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="small">Dymovod</strong>
+                <span class="fs-4 fw-bold" id="temp-dymovod">- °C</span>
+              </div>
+              <div class="temp-bar">
+                <div class="temp-bar-fill" id="bar-dymovod"></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6 col-lg-3 mb-2">
+            <div class="card p-3 shadow-sm" style="height: 120px;">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="small">Poloha dvierok</strong>
+                <span class="fs-4 fw-bold" id="poloha-dvierok">- %</span>
+              </div>
+              <div class="temp-bar">
+                <div class="temp-bar-fill" id="bar-dvierok" style="background: linear-gradient(to right, #28a745, #32cd32);"></div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <!-- Teplota TUV -->
-        <div class="card p-3 mb-3 shadow">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <strong>Teplota TUV</strong>
-            <span class="fs-3 fw-bold" id="temp-tuv">- °C</span>
+        <!-- ===== OVLÁDANIE ===== -->
+        <h4 class="text-center text-primary fw-bold mt-4 mb-3">Ovládanie</h4>
+        <div class="row g-3 justify-content-center">
+          <!-- Prvý card: Režim + Priorita (vedľa seba) -->
+          <div class="col-12 col-md-6 col-lg-4">
+            <div class="switch-card d-flex flex-wrap justify-content-center gap-3 p-3">
+              <!-- Režim topenia -->
+              <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
+                <div class="switch-label small mb-1">Režim topenia</div>
+                <div class="blynk-switch" id="sw-rezim" onclick="toggleSwitch(this, 'topenie_rezim')" style="width: 180px;">
+                  <div class="switch-half left">Automatika</div>
+                  <div class="switch-half right">Manuál</div>
+                  <div class="switch-slider"></div>
+                </div>
+              </div>
+              <!-- Priorita topenia -->
+              <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
+                <div class="switch-label small mb-1">Priorita topenia</div>
+                <div class="blynk-switch" id="sw-priorita" onclick="toggleSwitch(this, 'ovladanie_priorita_topenie')" style="width: 180px;">
+                  <div class="switch-half left">Radiátory</div>
+                  <div class="switch-half right">TUV</div>
+                  <div class="switch-slider"></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="temp-bar">
-            <div class="temp-bar-fill" id="bar-tuv"></div>
-          </div>
-        </div>
 
-        <!-- Teplota kotla -->
-        <div class="card p-3 mb-3 shadow">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <strong>Teplota kotla</strong>
-            <span class="fs-3 fw-bold" id="temp-kotol">- °C</span>
+          <!-- Druhý card: Čerpadlo + Ventil TUV (vedľa seba) -->
+          <div class="col-12 col-md-6 col-lg-4">
+            <div class="switch-card d-flex flex-wrap justify-content-center gap-3 p-3">
+              <!-- Čerpadlo kotla -->
+              <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
+                <div class="switch-label small mb-1">Čerpadlo kotla</div>
+                <div class="blynk-switch" id="sw-cerpadlo" onclick="toggleSwitch(this, 'ovladanie_rele_cerpadlo')" style="width: 180px;">
+                  <div class="switch-half left">VYP</div>
+                  <div class="switch-half right">ZAP</div>
+                  <div class="switch-slider"></div>
+                </div>
+              </div>
+              <!-- Ventil TUV -->
+              <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
+                <div class="switch-label small mb-1">Ventil TUV</div>
+                <div class="blynk-switch" id="sw-tuv" onclick="toggleSwitch(this, 'ovladanie_rele_tuv')" style="width: 180px;">
+                  <div class="switch-half left">VYP</div>
+                  <div class="switch-half right">ZAP</div>
+                  <div class="switch-slider"></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="temp-bar">
-            <div class="temp-bar-fill" id="bar-kotol"></div>
-          </div>
-        </div>
 
-        <!-- Teplota dymovodu -->
-        <div class="card p-3 mb-4 shadow">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <strong>Teplota dymovodu</strong>
-            <span class="fs-3 fw-bold" id="temp-dymovod">- °C</span>
-          </div>
-          <div class="temp-bar">
-            <div class="temp-bar-fill" id="bar-dymovod"></div>
-          </div>
-        </div>
-
-<!-- ===== PREPÍNAČE (PRESUNUTÉ SEM) ===== -->
-        <h4 class="text-center text-primary fw-bold mb-3">Ovládanie</h4>
-        <!-- Režim automatika / manuál -->
-        <div class="switch-card">
-          <div class="switch-label">Režim topenia</div>
-          <div class="blynk-switch" id="sw-rezim" onclick="toggleSwitch(this, 'topenie_rezim')">
-            <div class="switch-half left">Automatika</div>
-            <div class="switch-half right">Manuál</div>
-            <div class="switch-slider"></div>
-          </div>
-        </div>
-        <!-- Čerpadlo -->
-        <div class="switch-card">
-          <div class="switch-label">Čerpadlo kotla</div>
-          <div class="blynk-switch" id="sw-cerpadlo" onclick="toggleSwitch(this, 'ovladanie_rele_cerpadlo')">
-            <div class="switch-half left">VYP</div>
-            <div class="switch-half right">ZAP</div>
-            <div class="switch-slider"></div>
-          </div>
-        </div>
-        <!-- Ventil TUV -->
-        <div class="switch-card">
-          <div class="switch-label">Ventil TUV</div>
-          <div class="blynk-switch" id="sw-tuv" onclick="toggleSwitch(this, 'ovladanie_rele_tuv')">
-            <div class="switch-half left">VYP</div>
-            <div class="switch-half right">ZAP</div>
-            <div class="switch-slider"></div>
-          </div>
-        </div>
-        <!-- Ventil Radiátory -->
-        <div class="switch-card">
-          <div class="switch-label">Ventil Radiátory</div>
-          <div class="blynk-switch" id="sw-radiatory" onclick="toggleSwitch(this, 'ovladanie_rele_radiatory')">
-            <div class="switch-half left">VYP</div>
-            <div class="switch-half right">ZAP</div>
-            <div class="switch-slider"></div>
-          </div>
-        </div>
-        <!-- Priorita -->
-        <div class="switch-card">
-          <div class="switch-label">Priorita topenia</div>
-          <div class="blynk-switch" id="sw-priorita" onclick="toggleSwitch(this, 'ovladanie_priorita_topenie')">
-            <div class="switch-half left">Radiátory</div>
-            <div class="switch-half right">TUV</div>
-            <div class="switch-slider"></div>
+          <!-- Tretí card: Ventil Radiátory (sám) -->
+          <div class="col-12 col-md-6 col-lg-4">
+            <div class="switch-card d-flex flex-wrap justify-content-center gap-3 p-3">
+              <!-- Ventil Radiátory -->
+              <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
+                <div class="switch-label small mb-1">Ventil Radiátory</div>
+                <div class="blynk-switch" id="sw-radiatory" onclick="toggleSwitch(this, 'ovladanie_rele_radiatory')" style="width: 180px;">
+                  <div class="switch-half left">VYP</div>
+                  <div class="switch-half right">ZAP</div>
+                  <div class="switch-slider"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-
       <div id="topenie-nastavenia" class="topenie-sub">
         <div class="container py-4">
           <h2 class="text-center mb-5 text-primary fw-bold">Nastavenia topenia</h2>
@@ -1777,7 +2053,7 @@ HTML_TEMPLATE = r"""
       document.getElementById('home-total-power').textContent = total.toFixed(0) + ' W';
       document.getElementById('home-total-energy').textContent = energy.toFixed(3) + ' kWh';
     }
-function renderDistribucia() {
+    function renderDistribucia() {
       const container = document.getElementById('distribucia-content');
       container.innerHTML = '';
       const faze = ['L1', 'L2', 'L3'];
@@ -1821,12 +2097,24 @@ function renderDistribucia() {
       document.getElementById('dist-total-energy').textContent =
         (data['PZEM_total_energy'] || 0).toFixed(3) + ' kWh';
     }
-    // Reset cez Blynk V11 – simulácia (ak nechceš priamo volať ESP)
+    // Reset cez Flask tlačidlo
     async function resetPZEMEnergy() {
-      // Tu môžeš buď poslať na Blynk V11, alebo priamo na ESP ak máš endpoint
-      showToast("Reset odoslaný (funguje cez Blynk tlačidlo V11)", "info");
-      // Alebo priamo:
-      // await fetch('http://IP_PZEM_ESP/blynk?V11=1');
+      try {
+        const response = await fetch('/write', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ key: 'PZEM_reset_energy', value: 1 })
+        });
+        if (response.ok) {
+          showToast("Reset odoslaný cez Flask tlačidlo", "info");
+        } else {
+          showToast("Chyba pri odosielaní resetu", "error");
+        }
+      } catch (error) {
+        showToast("Chyba spojenia: " + error.message, "error");
+      }
     }
     function renderAdvanced() {
       const list = document.getElementById('settings-list');
@@ -1939,6 +2227,12 @@ function renderDistribucia() {
       const elTuv = document.getElementById('temp-tuv');
       const elKotol = document.getElementById('temp-kotol');
       const elDym = document.getElementById('temp-dymovod');
+
+      const dvierokPos = parseFloat(data['poloha_dvierok_aktualna']) || 0;
+      const elDvierok = document.getElementById('poloha-dvierok');
+      if (elDvierok) elDvierok.textContent = dvierokPos.toFixed(0) + ' %';
+
+      updateTempBarSafe(dvierokPos, "bar-dvierok", 100);  // Max 100 for percentage
 
       if (elTuv) elTuv.textContent = tuvTemp.toFixed(1) + ' °C';
       if (elKotol) elKotol.textContent = kotolTemp.toFixed(1) + ' °C';
@@ -2054,6 +2348,26 @@ function renderDistribucia() {
       setTimeout(load, 1000);  // Čakaj chvíľu, aby server stihol uložiť
     }
 
+    // Funkcia pre zobrazovanie topenia na domovskej stranke
+    function updateTopenieHomeSummary() {
+      // Teplota kotla
+      const kotolTemp = data['teplota_kotla'];
+      document.getElementById('home-kotol-temp').textContent = kotolTemp !== undefined ? kotolTemp.toFixed(1) + ' °C' : '-';
+      
+      // Teplota TUV
+      const tuvTemp = data['teplota_tuv'];
+      document.getElementById('home-tuv-temp').textContent = tuvTemp !== undefined ? tuvTemp.toFixed(1) + ' °C' : '-';
+      
+      // Teplota dymovodu
+      const dymovodTemp = data['teplota_dymovod'];
+      document.getElementById('home-dymovod-temp').textContent = dymovodTemp !== undefined ? dymovodTemp.toFixed(1) + ' °C' : '-';
+      
+      // Poloha dvierok
+      const dvierkaPos = data['poloha_dvierok_aktualna'];
+      document.getElementById('home-dvierka-pos').textContent = dvierkaPos !== undefined ? dvierkaPos.toFixed(0) + ' %' : '-';
+      
+    }
+
     async function load() {
       try {
         const [d, i] = await Promise.all([fetch('/data'), fetch('/vpin_info')]);
@@ -2064,6 +2378,7 @@ function renderDistribucia() {
         updateHomeSummary();
         updateInfoBar();
         updateDiagram();
+        updateTopenieHomeSummary();
         updateHomeDistribucia();
           if (document.getElementById('distribucia')?.classList.contains('active')) {
             renderDistribucia();
@@ -2192,8 +2507,6 @@ function renderDistribucia() {
         sw.classList.remove("on");
       }
     }
-
-
 
     load();
     setInterval(load, REFRESH);
