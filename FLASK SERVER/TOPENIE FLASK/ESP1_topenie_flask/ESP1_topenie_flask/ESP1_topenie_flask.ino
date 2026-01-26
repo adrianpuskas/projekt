@@ -73,6 +73,10 @@ const unsigned long checkIntervalWhenDown = 5000;  // Interval pre kontrolu obno
 unsigned long lastWifiReconnectTime = 0;  // Nový timer pre reconnect WiFi
 const unsigned long wifiReconnectInterval = 10000;  // Skús reconnect každých 10 sekúnd
 
+ // Uchováva čas pre zapnutie ventilu 
+unsigned long cas_zapnutia_eletroventilu = 0; // Uchováva čas pre zapnutie ventilu
+bool eletroventil_tuv_vypnuty = false; // Sledovanie stavu ventilu
+bool relay_cerpadlo = false; // sledovanie stavu cerpadla
 
 // Zapisovanie do local servera
 //zapisovanie v tvare : sendToLocalServer("KEY - NA AKU POZICIU VPINS", zapisovana_hodnota);
@@ -155,9 +159,16 @@ void cb_topenie_rezim(float value) {
 
 // Flask citanie čerpadlo
 void cb_rele_cerpadlo(float value) {
-    if ((int)topenie_rezim == 1) {
+    if ((int)topenie_rezim == 1) { // manuál
         ovladanie_rele_cerpadlo = value;
-        digitalWrite(RELAY_PUMP, value == 0 ? LOW : HIGH);
+
+        if (value == 1) {
+            digitalWrite(RELAY_PUMP, LOW);   // zapnuté
+            relay_cerpadlo = true;
+        } else {
+            digitalWrite(RELAY_PUMP, HIGH);  // vypnuté
+            relay_cerpadlo = false;
+        }
     } else {
         Serial.println("Čerpadlo sa nedá ovládať v automatickom režime");
     }
@@ -215,9 +226,6 @@ void cb_teplota_vypnutie(float value) {
 }
 
 
- // Uchováva čas pre zapnutie ventilu 
-unsigned long cas_zapnutia_eletroventilu = 0; // Uchováva čas pre zapnutie ventilu
-bool eletroventil_tuv_vypnuty = false; // Sledovanie stavu ventilu
 
 void updateOvladacichPrepinacov() {
   if ((int)topenie_rezim == 0) { // Len v automatickom režime
@@ -281,14 +289,16 @@ void handleAutomaticMode(bool useDefault) {
   if (teplota_dymovod - 2 >= dymovod_threshold) { // Zapnutie čerpadla
     Serial.println("---> Čerpadlo zapnuté");
     digitalWrite(RELAY_PUMP, LOW);
+    relay_cerpadlo = true;
 
     if (teplota_kotla >= 85) { // Bezpečnostné
       digitalWrite(RELAY_VALVE, LOW);
       digitalWrite(RELAY_VALVE_RADIATOR, LOW);
       Serial.println("---> Elektroventily zapnuté - nad 85°C");
-    } else {
+    }
+    else {
       if (teplota_tuv >= tuv_pozadovana) {
-        ovladanie_priorita_topenie = 0;
+        ovladanie_priorita_topenie = 0; // 0 = Radiatory ; 1 = TUV
         if (!eletroventil_tuv_vypnuty) {
           if (cas_zapnutia_eletroventilu == 0) {
             cas_zapnutia_eletroventilu = millis();
@@ -304,9 +314,10 @@ void handleAutomaticMode(bool useDefault) {
         }
         digitalWrite(RELAY_VALVE_RADIATOR, LOW);
         Serial.println("---> Elektroventil RADIÁTOROV zapnutý");
-      } else if (teplota_tuv < (tuv_pozadovana - tuv_tolerancia)) {
-        if (teplota_dymovod < dymovod_threshold) {
-          ovladanie_priorita_topenie = 0;
+      } 
+      else if (teplota_tuv < (tuv_pozadovana - tuv_tolerancia)) {
+        if (teplota_dymovod < dymovod_threshold) { // ak je dymovod zimny, prepni na radiatory a potom podla teploty kotla vypne cerpadlo
+          ovladanie_priorita_topenie = 0; // 0 = Radiatory ; 1 = TUV
           Serial.println("---> NEDOSTATOCNA TEPLOTA SPALIN NA TO, ABY SA HRIALA TUV");
           eletroventil_tuv_vypnuty = false;
           cas_zapnutia_eletroventilu = 0;
@@ -314,18 +325,20 @@ void handleAutomaticMode(bool useDefault) {
           digitalWrite(RELAY_VALVE_RADIATOR, LOW);
           Serial.println("---> Elektroventil TUV vypnutý - TEPLOTA DYMOVODU");
           Serial.println("---> Elektroventil RADIÁTOROV zapnutý - TEPLOTA DYMOVODU");
-        } else {
-          ovladanie_priorita_topenie = 1;
-          eletroventil_tuv_vypnuty = false;
-          cas_zapnutia_eletroventilu = 0;
-          digitalWrite(RELAY_VALVE, LOW);
-          Serial.println("---> Elektroventil TUV zapnutý");
-          digitalWrite(RELAY_VALVE_RADIATOR, HIGH);
-          Serial.println("---> Elektroventil RADIÁTOROV vypnutý");
+        } 
+        else {
+        ovladanie_priorita_topenie = 1; // 0 = Radiatory ; 1 = TUV
+        eletroventil_tuv_vypnuty = false;
+        cas_zapnutia_eletroventilu = 0;
+        digitalWrite(RELAY_VALVE, LOW);
+        Serial.println("---> Elektroventil TUV zapnutý");
+        digitalWrite(RELAY_VALVE_RADIATOR, HIGH);
+        Serial.println("---> Elektroventil RADIÁTOROV vypnutý");
         }
-      } else if ((teplota_tuv > (tuv_pozadovana - tuv_tolerancia)) && (teplota_tuv < tuv_pozadovana)) {
+      } 
+      else if ((teplota_tuv > (tuv_pozadovana - tuv_tolerancia)) && (teplota_tuv < tuv_pozadovana)) {
         if (teplota_dymovod < dymovod_threshold) {
-          ovladanie_priorita_topenie = 0;
+          ovladanie_priorita_topenie = 0; // 0 = Radiatory ; 1 = TUV
           Serial.println("---> NEDOSTATOCNA TEPLOTA SPALIN NA TO, ABY SA HRIALA TUV");
           eletroventil_tuv_vypnuty = false;
           cas_zapnutia_eletroventilu = 0;
@@ -334,7 +347,7 @@ void handleAutomaticMode(bool useDefault) {
           Serial.println("---> Elektroventil TUV vypnutý - TEPLOTA DYMOVODU");
           Serial.println("---> Elektroventil RADIÁTOROV zapnutý - TEPLOTA DYMOVODU");
         } else {
-          if ((int)ovladanie_priorita_topenie == 0) {
+          if ((int)ovladanie_priorita_topenie == 0) { // 0 = Radiatory ; 1 = TUV
             digitalWrite(RELAY_VALVE, HIGH);
             digitalWrite(RELAY_VALVE_RADIATOR, LOW);
             Serial.println("---> Elektroventil TUV vypnutý - ovladanie_priorita_topenie");
@@ -348,11 +361,21 @@ void handleAutomaticMode(bool useDefault) {
         }
       }
     }
-  } else if (teplota_kotla <= kotol_vypnutie) {
-    Serial.println("---> Čerpadlo vypnuté");
-    digitalWrite(RELAY_PUMP, HIGH);
-    digitalWrite(RELAY_VALVE_RADIATOR, HIGH);
+  } 
+  
+  else if ((teplota_dymovod < dymovod_threshold) && (relay_cerpadlo == true)) { 
+    Serial.println("---> Čerpadlo zapnuté");
     digitalWrite(RELAY_VALVE, HIGH);
+    digitalWrite(RELAY_VALVE_RADIATOR, LOW);
+    Serial.println("---> Elektroventil TUV vypnutý - TEPLOTA DYMOVODU");
+    Serial.println("---> Elektroventil RADIÁTOROV zapnutý - TEPLOTA DYMOVODU");
+    if (teplota_kotla <= kotol_vypnutie) {
+      Serial.println("---> Čerpadlo vypnuté");
+      digitalWrite(RELAY_PUMP, HIGH);
+      relay_cerpadlo = false;
+      digitalWrite(RELAY_VALVE_RADIATOR, HIGH);
+      digitalWrite(RELAY_VALVE, HIGH);
+    }
   }
 
   // Ak nie default, aktualizuj prepínače
@@ -417,10 +440,12 @@ void sendSensor() {
   if (ovladanie_rele_cerpadlo == 1) {
     Serial.println("---> Čerpadlo zapnuté");
     digitalWrite(RELAY_PUMP, LOW);
+    relay_cerpadlo = true;
     //sendToLocalServer("status_cerpadlo", 1);  // Potvrdenie stavu
   } else {
     Serial.println("---> Čerpadlo vypnuté");
     digitalWrite(RELAY_PUMP, HIGH);
+    relay_cerpadlo = false;
     //sendToLocalServer("status_cerpadlo", 0);
   }
 
@@ -482,6 +507,7 @@ void setup() {
   pinMode(RELAY_VALVE_RADIATOR, OUTPUT);
 
   digitalWrite(RELAY_PUMP, HIGH);
+  relay_cerpadlo = false;
   digitalWrite(RELAY_VALVE, HIGH);
   digitalWrite(RELAY_VALVE_RADIATOR, HIGH);
 
