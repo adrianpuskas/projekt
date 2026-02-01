@@ -8,6 +8,7 @@ import threading
 import sqlite3
 import os
 import json
+import math
 app = Flask(__name__)
 VPINS = {
     "V72": ("PV1 prúd do batérie", "Fotovoltaika", "A", "fas fa-bolt"),
@@ -97,7 +98,9 @@ VPINS = {
 TOPENIE_KEYS = [
     key for key, value in VPINS.items()
     if value[1].startswith("Topenie")  # Kategória začína "Topenie"
-    and (key.startswith("nastavenie_") or key.startswith("teplota_vypnutie_") or key.startswith("teplota_zapnutie_") or key.startswith("teplota_ovladanie_"))
+    and (key.startswith("nastavenie_") or key.startswith("teplota_vypnutie_") or key.startswith("teplota_zapnutie_") 
+         or key.startswith("teplota_ovladanie_") or key.startswith("poloha_dvierok_") or key.startswith("ovladanie_")
+         or key.startswith("topenie_kotol_"))
 ]
 
 local_data = {}
@@ -109,22 +112,55 @@ def load_configs():
             return json.load(f)
     return {}
 advanced_configs = load_configs()
+
 def load_topenie():
     if os.path.exists('topenie.json'):
         with open('topenie.json') as f:
-            return json.load(f)
-    # Tvoje defaultné hodnoty (uprav ich tu – napr. na 62,12,35,65,30,33,40)
-    return {
+            configs = json.load(f)
+            # Explicitná kontrola pre polohy dvierok – ak chýbajú alebo sú nevalidné, nastav na 0
+            if 'poloha_dvierok_aktualna' not in configs or not isinstance(configs['poloha_dvierok_aktualna'], (int, float)) or configs['poloha_dvierok_aktualna'] < 0 or configs['poloha_dvierok_aktualna'] > 100:
+                configs['poloha_dvierok_aktualna'] = 0
+            if 'poloha_dvierok_pozadovana' not in configs or not isinstance(configs['poloha_dvierok_pozadovana'], (int, float)) or configs['poloha_dvierok_pozadovana'] < 0 or configs['poloha_dvierok_pozadovana'] > 100:
+                configs['poloha_dvierok_pozadovana'] = 0
+            print(f"Načítané topenie configs: {configs}")  # Log pre debug
+            return configs
+    # Defaultné hodnoty (ak JSON neexistuje)
+    defaults = {
         "nastavenie_teplota_pozadovana_tuv": 62,
         "nastavenie_teplota_tolerancia_tuv": 12,
         "nastavenie_teplota_kotla_pracovna_radiatory": 35,
         "nastavenie_teplota_kotla_pracovna_tuv": 65,
         "teplota_vypnutie_cerpadla_kotol_pod": 30,
         "teplota_zapnutie_cerpadla_kotol_nad": 33,
-        "teplota_ovladanie_cerpadla_dymovod": 40
+        "teplota_ovladanie_cerpadla_dymovod": 40,
+        # Explicitne 0 pre dvierka (zabrán 60%)
+        "nastavenie_pracovna_teplota_kotla": 35,
+        "poloha_dvierok_aktualna": 0,
+        "poloha_dvierok_pozadovana": 0,
+        "topenie_kotol_rezim": 0,
+        "wifiStatus_kotol": 0,
+        "ovladanie_inicializacia": 0,
+        "ovladanie_manualne_zatvorenie_dvierok": 0
     }
+    print(f"Použité defaulty pre topenie: {defaults}")  # Log pre debug
+    return defaults
 
 topenie_configs = load_topenie()
+
+# Definícia _store_value (už tu musí byť PRED cyklom)
+def _store_value(key: str, value):
+    with data_lock:
+        local_data[key] = {"value": value, "ts": datetime.utcnow().isoformat()}
+
+# AŽ TERAZ inicializácia (cyklus POD definíciou)
+for key in TOPENIE_KEYS:
+    if key in topenie_configs:
+        if key.startswith('poloha_dvierok_'):
+            if topenie_configs[key] != 0:
+                _store_value(key, topenie_configs[key])  # Len ak nie default 0 (zabrán zbytočnému prepisovaniu)
+        else:
+            _store_value(key, topenie_configs[key])
+
 
 def _store_value(key: str, value):
     with data_lock:
@@ -188,16 +224,29 @@ def get_history_and_energy(minutes=1440):
     else:
         timestamps = [r[0][5:16] for r in rows]
  
-    pv = [round((float(r[1] or 0) + float(r[2] or 0))) for r in rows]
-    soc = [float(r[3] or 0) for r in rows]
-    load = [float(r[4] or 0) for r in rows]
-    battery_powers = [float(r[5] or 0) for r in rows]
+    # Ošetrené float konverzie s try-except
+    def safe_float(val):
+        try:
+            return float(val) if val is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+ 
+    pv = [round(safe_float(r[1]) + safe_float(r[2])) for r in rows]
+    soc = [safe_float(r[3]) for r in rows]
+    load = [safe_float(r[4]) for r in rows]
+    battery_powers = [safe_float(r[5]) for r in rows]
+ 
+    # Filtruj NaN/Infinity
+    pv = [0 if math.isnan(v) or math.isinf(v) else v for v in pv]
+    soc = [0 if math.isnan(v) or math.isinf(v) else v for v in soc]
+    load = [0 if math.isnan(v) or math.isinf(v) else v for v in load]
+    battery_powers = [0 if math.isnan(v) or math.isinf(v) else v for v in battery_powers]
  
     interval_kwh = 5 / 3600000.0
     pv_kwh = sum(pv) * interval_kwh
     load_kwh = sum(load) * interval_kwh
-    charge_kwh = sum(bp for bp in battery_powers if bp > 0) * interval_kwh
-    discharge_kwh = sum(-bp for bp in battery_powers if bp < 0) * interval_kwh
+    charge_kwh = sum(bp for bp in battery_powers if bp > 0 and not math.isnan(bp) and not math.isinf(bp)) * interval_kwh
+    discharge_kwh = sum(-bp for bp in battery_powers if bp < 0 and not math.isnan(bp) and not math.isinf(bp)) * interval_kwh
  
     step = max(1, len(rows) // 150)
  
@@ -1412,6 +1461,59 @@ HTML_TEMPLATE = r"""
             </div>
           </div>
         </div>
+        <!-- Nová sekcia: Ovládanie dvierok kotla (pod existujúcimi prepínačmi) -->
+        <h5 class="text-center text-primary mt-4 mb-3">Ovládanie dvierok kotla</h5>
+        <div class="row g-2 switch-row justify-content-center">
+
+          <!-- Prepínač: Režim dvierok kotla (Automatika/Manual) -->
+          <div class="col-6 col-md-4">
+            <div class="switch-card">
+              <div class="switch-label">Režim dvierok kotla</div>
+              <div class="blynk-switch" id="sw-kotol-rezim" onclick="toggleSwitch(this, 'topenie_kotol_rezim')">
+                <div class="switch-half left">Automatika</div>
+                <div class="switch-half right">Manual</div>
+                <div class="switch-slider"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prepínač: Manuálne zatvorenie dvierok (OFF/ON) -->
+          <div class="col-6 col-md-4">
+            <div class="switch-card">
+              <div class="switch-label">Manuálne zatvorenie dvierok</div>
+              <button class="btn btn-danger" onclick="sendValue('ovladanie_manualne_zatvorenie_dvierok', 1)">
+                <i class="fas fa-door-closed"></i> Zatvoriť/Otvoriť dvierka
+              </button>
+            </div>
+          </div>
+
+          <!-- Tlačidlo: Inicializácia dvierok -->
+          <div class="col-12 col-md-4">
+            <div class="switch-card text-center">
+              <div class="switch-label">Inicializácia dvierok</div>
+              <button class="btn btn-primary w-100" onclick="setInicializaciaDvierok(1)">Spustiť inicializáciu</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Sliders: Nastavenie pracovnej teploty a Požadovaná poloha dvierok -->
+        <div class="row g-3 mt-3 justify-content-center">
+          <div class="col-12 col-md-6">
+            <div class="card p-3 shadow-sm">
+              <label for="nastavenie_pracovna_teplota_kotla" class="form-label small fw-bold">Nastavenie pracovnej teploty kotla (°C)</label>
+              <input type="range" class="form-range" id="nastavenie_pracovna_teplota_kotla" min="0" max="100" step="1" value="0" onchange="sendValue('nastavenie_pracovna_teplota_kotla', this.value)">
+              <div class="text-center mt-1"><span id="val-pracovna-teplota">0 °C</span></div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="card p-3 shadow-sm">
+              <label for="poloha_dvierok_pozadovana" class="form-label small fw-bold">Požadovaná poloha dvierok (%)</label>
+              <input type="range" class="form-range" id="poloha_dvierok_pozadovana" min="0" max="100" step="1" value="0" onchange="sendValue('poloha_dvierok_pozadovana', this.value)" disabled>
+              <div class="text-center mt-1"><span id="val-pozadovana-poloha">0 %</span></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="topenie-nastavenia" class="topenie-sub">
         <div class="container py-4">
@@ -1579,13 +1681,15 @@ HTML_TEMPLATE = r"""
 
     function showTopenieSub(id) {
       document.querySelectorAll('.topenie-sub').forEach(s => s.classList.remove('active'));
-      document.getElementById(`topenie-${id}`).classList.add('active');
-      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-      event.target.classList.add('active');
+      document.getElementById('topenie-' + id)?.classList.add('active');
+      
       if (id === 'nastavenia') {
-        clearInterval(refreshInterval);  // Pozastav auto-obnovu v nastaveniach
-      } else {
-        refreshInterval = setInterval(load, REFRESH);  // Obnov pri odchode
+        loadTopenieSettings();  // Fetch a update inputov
+      }
+      
+      if (id === 'prehled' || id === 'ovladanie') {
+        updateTopenieSensors();  // Ihneď aktualizuj dynamické hodnoty
+        updateTopenieOvl();
       }
     }
 
@@ -2217,69 +2321,155 @@ HTML_TEMPLATE = r"""
     // Funkcie pre Topenie sekciu
     // Periodicky obnovuje len teploty zo senzorov (textové prvky)
     function updateTopenieSensors() {
+      try {
+        const tuvTemp = parseFloat(data['teplota_tuv']) || 0;
+        const kotolTemp = parseFloat(data['teplota_kotla']) || 0;
+        const dymovodTemp = parseFloat(data['teplota_dymovod']) || 0;
 
-      const tuvTemp = parseFloat(data['teplota_tuv']) || 0;
-      const kotolTemp = parseFloat(data['teplota_kotla']) || 0;
-      const dymovodTemp = parseFloat(data['teplota_dymovod']) || 0;
+        // ---- LEN AK EXISTUJÚ PRVKY, TAK DO NICH ZAPISUJEME ----
+        const elTuv = document.getElementById('temp-tuv');
+        const elKotol = document.getElementById('temp-kotol');
+        const elDym = document.getElementById('temp-dymovod');
 
-      // ---- LEN AK EXISTUJÚ PRVKY, TAK DO NICH ZAPISUJEME ----
+        const dvierokPos = parseFloat(data['poloha_dvierok_aktualna']) || 0;
+        const elDvierok = document.getElementById('poloha-dvierok');
+        if (elDvierok) elDvierok.textContent = dvierokPos.toFixed(0) + ' %';
 
-      const elTuv = document.getElementById('temp-tuv');
-      const elKotol = document.getElementById('temp-kotol');
-      const elDym = document.getElementById('temp-dymovod');
+        updateTempBarSafe(dvierokPos, "bar-dvierok", 100);  // Max 100 for percentage
 
-      const dvierokPos = parseFloat(data['poloha_dvierok_aktualna']) || 0;
-      const elDvierok = document.getElementById('poloha-dvierok');
-      if (elDvierok) elDvierok.textContent = dvierokPos.toFixed(0) + ' %';
+        if (elTuv) elTuv.textContent = tuvTemp.toFixed(1) + ' °C';
+        if (elKotol) elKotol.textContent = kotolTemp.toFixed(1) + ' °C';
+        if (elDym) elDym.textContent = dymovodTemp.toFixed(1) + ' °C';
 
-      updateTempBarSafe(dvierokPos, "bar-dvierok", 100);  // Max 100 for percentage
+        // ---- TEPLOTNÉ BARY (LEN AK EXISTUJÚ) ----
+        updateTempBarSafe(tuvTemp, "bar-tuv", 90);
+        updateTempBarSafe(kotolTemp, "bar-kotol", 100);
+        updateTempBarSafe(dymovodTemp, "bar-dymovod", 200);
 
-      if (elTuv) elTuv.textContent = tuvTemp.toFixed(1) + ' °C';
-      if (elKotol) elKotol.textContent = kotolTemp.toFixed(1) + ' °C';
-      if (elDym) elDym.textContent = dymovodTemp.toFixed(1) + ' °C';
+        // ---- PREPÍNAČE (LEN AK EXISTUJÚ) ----
+        setSwitchSafe("sw-rezim", data.topenie_rezim);
+        setSwitchSafe("sw-cerpadlo", data.ovladanie_rele_cerpadlo);
+        setSwitchSafe("sw-tuv", data.ovladanie_rele_tuv);
+        setSwitchSafe("sw-radiatory", data.ovladanie_rele_radiatory);
+        setSwitchSafe("sw-priorita", data.ovladanie_priorita_topenie);
 
-      // ---- TEPLOTNÉ BARY (LEN AK EXISTUJÚ) ----
-      updateTempBarSafe(tuvTemp, "bar-tuv", 90);
-      updateTempBarSafe(kotolTemp, "bar-kotol", 100);
-      updateTempBarSafe(dymovodTemp, "bar-dymovod", 200);
+        // Nové: Prepínače pre kotol
+        setSwitchSafe("sw-kotol-rezim", data.topenie_kotol_rezim);
+        setSwitchSafe("sw-manualne-zatvorenie", data.ovladanie_manualne_zatvorenie_dvierok);
 
-      // ---- PREPÍNAČE (LEN AK EXISTUJÚ) ----
-      setSwitchSafe("sw-rezim", data.topenie_rezim);
-      setSwitchSafe("sw-cerpadlo", data.ovladanie_rele_cerpadlo);
-      setSwitchSafe("sw-tuv", data.ovladanie_rele_tuv);
-      setSwitchSafe("sw-radiatory", data.ovladanie_rele_radiatory);
-      setSwitchSafe("sw-priorita", data.ovladanie_priorita_topenie);
+        // Logika pre slider polohy: Enable/disable podľa režimu
+        const sliderPoloha = document.getElementById('poloha_dvierok_pozadovana');
+        if (sliderPoloha) {
+          sliderPoloha.disabled = (data.topenie_kotol_rezim !== 1);  // Disabled ak nie manual
+        }
+
+        // NOVÉ: Aktualizuj textové hodnoty v Prehľade (pracovná teplota kotla a požadovaná poloha dvierok)
+        const elPracovnaTeplota = document.getElementById('val-pracovna-teplota');  // Správne ID podľa tvojho kódu
+        if (elPracovnaTeplota) elPracovnaTeplota.textContent = (data['nastavenie_pracovna_teplota_kotla'] || 0) + ' °C';
+
+        const elPozadovanaPoloha = document.getElementById('val-pozadovana-poloha');  // Správne ID podľa tvojho kódu
+        if (elPozadovanaPoloha) elPozadovanaPoloha.textContent = (data['poloha_dvierok_pozadovana'] || 0) + ' %';
+
+        // NOVÉ: Periodická aktualizácia sliderov v Nastaveniach, ale LEN AK NIE SÚ FOKUSOVANÉ (neprepisuj počas editácie)
+        const sliderTeplota = document.getElementById('nastavenie_pracovna_teplota_kotla');
+        if (sliderTeplota && document.activeElement !== sliderTeplota) {  // Len ak nie fokusovaný
+          sliderTeplota.value = data['nastavenie_pracovna_teplota_kotla'] || 0;
+          const valTeplota = document.getElementById('val-pracovna-teplota');
+          if (valTeplota) valTeplota.textContent = sliderTeplota.value + ' °C';
+        }
+
+        if (sliderPoloha && document.activeElement !== sliderPoloha) {  // Len ak nie fokusovaný
+          sliderPoloha.value = data['poloha_dvierok_pozadovana'] || 0;
+          const valPoloha = document.getElementById('val-pozadovana-poloha');
+          if (valPoloha) valPoloha.textContent = sliderPoloha.value + ' %';
+        }
+
+        // Ak máš ďalšie dynamické hodnoty, pridaj ich podobne
+      } catch (e) {
+        console.error('Chyba v updateTopenieSensors:', e);
+        showToast("Chyba pri aktualizácii senzorov topenia", "error");
+      }
     }
-
-
 
 
     // Obnovuje inputy nastavení len pri vstupe do sekcie alebo po uložení
     function updateTopenieSettings() {
-      document.getElementById('nastavenie_teplota_pozadovana_tuv').value = data['nastavenie_teplota_pozadovana_tuv'] || '';
-      document.getElementById('nastavenie_teplota_tolerancia_tuv').value = data['nastavenie_teplota_tolerancia_tuv'] || '';
-      document.getElementById('nastavenie_teplota_kotla_pracovna_radiatory').value = data['nastavenie_teplota_kotla_pracovna_radiatory'] || '';
-      document.getElementById('nastavenie_teplota_kotla_pracovna_tuv').value = data['nastavenie_teplota_kotla_pracovna_tuv'] || '';
-      document.getElementById('teplota_vypnutie_cerpadla_kotol_pod').value = data['teplota_vypnutie_cerpadla_kotol_pod'] || '';
-      document.getElementById('teplota_zapnutie_cerpadla_kotol_nad').value = data['teplota_zapnutie_cerpadla_kotol_nad'] || '';
-      document.getElementById('teplota_ovladanie_cerpadla_dymovod').value = data['teplota_ovladanie_cerpadla_dymovod'] || '';
+      try {
+        document.getElementById('nastavenie_teplota_pozadovana_tuv').value = data['nastavenie_teplota_pozadovana_tuv'] || '';
+        document.getElementById('nastavenie_teplota_tolerancia_tuv').value = data['nastavenie_teplota_tolerancia_tuv'] || '';
+        document.getElementById('nastavenie_teplota_kotla_pracovna_radiatory').value = data['nastavenie_teplota_kotla_pracovna_radiatory'] || '';
+        document.getElementById('nastavenie_teplota_kotla_pracovna_tuv').value = data['nastavenie_teplota_kotla_pracovna_tuv'] || '';
+        document.getElementById('teplota_vypnutie_cerpadla_kotol_pod').value = data['teplota_vypnutie_cerpadla_kotol_pod'] || '';
+        document.getElementById('teplota_zapnutie_cerpadla_kotol_nad').value = data['teplota_zapnutie_cerpadla_kotol_nad'] || '';
+        document.getElementById('teplota_ovladanie_cerpadla_dymovod').value = data['teplota_ovladanie_cerpadla_dymovod'] || '';
+        
+        // NOVÉ: Inicializácia sliderov s reálnym časom (počas posúvania)
+        const sliderTeplota = document.getElementById('nastavenie_pracovna_teplota_kotla');
+        if (sliderTeplota) {
+          sliderTeplota.value = data['nastavenie_pracovna_teplota_kotla'] || 0;
+          const valTeplota = document.getElementById('val-pracovna-teplota');
+          valTeplota.textContent = sliderTeplota.value + ' °C';  // Inicializuj hneď
+          
+          // Počas posúvania: Aktualizuj zobrazenú hodnotu v reálnom čase
+          sliderTeplota.addEventListener('input', () => {
+            valTeplota.textContent = sliderTeplota.value + ' °C';
+          });
+          
+          // Po uvoľnení: Ulož hodnotu (ak chceš automatické ukladanie; ak nie, odstráň toto)
+          sliderTeplota.addEventListener('change', () => {
+            sendValue('nastavenie_pracovna_teplota_kotla', parseFloat(sliderTeplota.value));
+            showToast(`Teplota kotla nastavená na ${sliderTeplota.value} °C`, "success");
+          });
+        }
+
+        const sliderPoloha = document.getElementById('poloha_dvierok_pozadovana');
+        if (sliderPoloha) {
+          sliderPoloha.value = data['poloha_dvierok_pozadovana'] || 0;
+          const valPoloha = document.getElementById('val-pozadovana-poloha');
+          valPoloha.textContent = sliderPoloha.value + ' %';  // Inicializuj hneď
+          
+          // Počas posúvania: Aktualizuj zobrazenú hodnotu v reálnom čase
+          sliderPoloha.addEventListener('input', () => {
+            valPoloha.textContent = sliderPoloha.value + ' %';
+          });
+          
+          // Po uvoľnení: Ulož hodnotu (ak chceš automatické ukladanie; ak nie, odstráň toto)
+          sliderPoloha.addEventListener('change', () => {
+            sendValue('poloha_dvierok_pozadovana', parseFloat(sliderPoloha.value));
+            showToast(`Poloha dvierok nastavená na ${sliderPoloha.value} %`, "success");
+          });
+          
+          // Disable ak nie manual režim (ako predtým)
+          sliderPoloha.disabled = (data.topenie_kotol_rezim !== 1);
+        }
+      } catch (e) {
+        console.error('Chyba v updateTopenieSettings:', e);
+        showToast("Chyba pri načítaní nastavení topenia", "error");
+      }
     }
+
     // Obnovuje ovládacie prvky (switche) v sekcii Ovládanie
     function updateTopenieOvl() {
-      // Prepnutie režimu
-      document.getElementById('topenie-rezim-switch').checked = data['topenie_rezim'] === 1;
+      try {
+        // Použi setSwitchSafe pre custom div switche (pridaj if na null)
+        const rezimEl = document.getElementById('topenie-rezim-switch');
+        if (rezimEl) setSwitchSafe('topenie-rezim-switch', data['topenie_rezim']);
 
-      // Prepnutie čerpadla
-      document.getElementById('ovladanie-rele-cerpadlo-switch').checked = data['ovladanie_rele_cerpadlo'] === 1;
+        const cerpadloEl = document.getElementById('ovladanie-rele-cerpadlo-switch');
+        if (cerpadloEl) setSwitchSafe('ovladanie-rele-cerpadlo-switch', data['ovladanie_rele_cerpadlo']);
 
-      // Prepnutie TUV ventilu
-      document.getElementById('ovladanie-rele-tuv-switch').checked = data['ovladanie_rele_tuv'] === 1;
+        const tuvEl = document.getElementById('ovladanie-rele-tuv-switch');
+        if (tuvEl) setSwitchSafe('ovladanie-rele-tuv-switch', data['ovladanie_rele_tuv']);
 
-      // Prepnutie radiátorov ventilu
-      document.getElementById('ovladanie-rele-radiatory-switch').checked = data['ovladanie_rele_radiatory'] === 1;
+        const radiatoryEl = document.getElementById('ovladanie-rele-radiatory-switch');
+        if (radiatoryEl) setSwitchSafe('ovladanie-rele-radiatory-switch', data['ovladanie_rele_radiatory']);
 
-      // Prepnutie priority (Radiátory / TUV)
-      document.getElementById('ovladanie-priorita-switch').checked = data['ovladanie_priorita_topenie'] === 1;
+        const prioritaEl = document.getElementById('ovladanie-priorita-switch');
+        if (prioritaEl) setSwitchSafe('ovladanie-priorita-switch', data['ovladanie_priorita_topenie']);
+      } catch (e) {
+        console.error('Chyba v updateTopenieOvl:', e);
+        showToast("Chyba pri aktualizácii switchov topenia", "error");
+      }
     }
 
     // Pôvodná funkcia – volá obe časti (používa sa pri vstupe do sekcie)
@@ -2296,6 +2486,17 @@ HTML_TEMPLATE = r"""
       });
       showToast(`Režim zmenený na ${value ? 'Manuál' : 'Automatika'}`, "success");
       load();
+    }
+
+    // Inicializácia dvierok (tlačidlo)
+    async function setInicializaciaDvierok(value) {
+      await fetch('/write', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: 'ovladanie_inicializacia', value: value})
+      });
+      showToast(`Inicializácia spustená!`, "success");
+      load();  // Obnov data
     }
 
     async function setTopenieRele(key, value) {
@@ -2326,7 +2527,11 @@ HTML_TEMPLATE = r"""
         nastavenie_teplota_kotla_pracovna_tuv: parseFloat(document.getElementById('nastavenie_teplota_kotla_pracovna_tuv').value),
         teplota_vypnutie_cerpadla_kotol_pod: parseFloat(document.getElementById('teplota_vypnutie_cerpadla_kotol_pod').value),
         teplota_zapnutie_cerpadla_kotol_nad: parseFloat(document.getElementById('teplota_zapnutie_cerpadla_kotol_nad').value),
-        teplota_ovladanie_cerpadla_dymovod: parseFloat(document.getElementById('teplota_ovladanie_cerpadla_dymovod').value)
+        teplota_ovladanie_cerpadla_dymovod: parseFloat(document.getElementById('teplota_ovladanie_cerpadla_dymovod').value),
+        // Nové pre kotol dvierka
+        nastavenie_pracovna_teplota_kotla: parseFloat(document.getElementById('nastavenie_pracovna_teplota_kotla').value),
+        poloha_dvierok_pozadovana: parseFloat(document.getElementById('poloha_dvierok_pozadovana').value)
+      
       };
       
       // Ulož nové hodnoty lokálne do data[] ihneď (pre okamžitú aktualizáciu UI)
@@ -2380,19 +2585,22 @@ HTML_TEMPLATE = r"""
         updateDiagram();
         updateTopenieHomeSummary();
         updateHomeDistribucia();
-          if (document.getElementById('distribucia')?.classList.contains('active')) {
-            renderDistribucia();
-          }
+        if (document.getElementById('distribucia')?.classList.contains('active')) {
+          renderDistribucia();
+        }
         if (document.getElementById('test')?.classList.contains('active')) {
           updateRelayState();
         }
         if (document.getElementById('topenie')?.classList.contains('active')) {
-          updateTopenieSensors();
-          updateTopenieOvl();  // Pridaj, ak treba switche
-          // Odstránené: if (document.getElementById('topenie-nastavenia').classList.contains('active')) { updateTopenieSettings(); }
-          // Namiesto toho: Používateľ klikne "Načítať" manuálne
+          try {
+            updateTopenieSensors();  // Teraz aktualizuje aj dynamické hodnoty v Prehľade
+            updateTopenieOvl();
+            // Stále bez updateTopenieSettings() – to len v Nastaveniach
+          } catch (e) {
+            console.error('Chyba v topení sekcii počas load:', e);
+            showToast("Chyba v topení sekcii – ostatné dáta načítajú sa normálne", "error");
+          }
         }
-          
         
         document.getElementById('status').textContent = `Aktualizované: ${new Date().toLocaleTimeString('sk-SK')}`;
         fetch('/history/today')
@@ -2407,8 +2615,46 @@ HTML_TEMPLATE = r"""
           document.getElementById('load-daily').textContent = '0 kWh (dnes)';
         });
       } catch (e) {
-        console.error("Chyba:", e);
+        console.error("Chyba v load:", e);
         document.getElementById('status').textContent = 'Chyba pri načítaní dát';
+      }
+    }
+
+    async function saveTopenieSettings() {
+      try {
+        const settings = {
+          nastavenie_teplota_pozadovana_tuv: parseFloat(document.getElementById('nastavenie_teplota_pozadovana_tuv').value),
+          nastavenie_teplota_tolerancia_tuv: parseFloat(document.getElementById('nastavenie_teplota_tolerancia_tuv').value),
+          nastavenie_teplota_kotla_pracovna_radiatory: parseFloat(document.getElementById('nastavenie_teplota_kotla_pracovna_radiatory').value),
+          nastavenie_teplota_kotla_pracovna_tuv: parseFloat(document.getElementById('nastavenie_teplota_kotla_pracovna_tuv').value),
+          teplota_vypnutie_cerpadla_kotol_pod: parseFloat(document.getElementById('teplota_vypnutie_cerpadla_kotol_pod').value),
+          teplota_zapnutie_cerpadla_kotol_nad: parseFloat(document.getElementById('teplota_zapnutie_cerpadla_kotol_nad').value),
+          teplota_ovladanie_cerpadla_dymovod: parseFloat(document.getElementById('teplota_ovladanie_cerpadla_dymovod').value),  // Opravená čiarka tu
+          // Nové pre kotol
+          nastavenie_pracovna_teplota_kotla: parseFloat(document.getElementById('nastavenie_pracovna_teplota_kotla').value),
+          poloha_dvierok_pozadovana: parseFloat(document.getElementById('poloha_dvierok_pozadovana').value)
+        };
+        
+        // Ulož nové hodnoty lokálne do data[] ihneď (pre okamžitú aktualizáciu UI)
+        for (const [key, value] of Object.entries(settings)) {
+          data[key] = value;  // Aktualizuj lokálne data
+          await fetch('/write', {  // Pošli na server
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key: key, value: value})
+          });
+        }
+        
+        showToast("Nastavenia topenia uložené!", "success");
+        
+        // Aktualizuj inputy ihneď z lokálnych data (nové hodnoty)
+        updateTopenieSettings();
+        
+        // Asynchrónne obnov celé data zo servera na pozadí (bez prepisovania inputov ihneď)
+        setTimeout(load, 1000);  // Čakaj chvíľu, aby server stihol uložiť
+      } catch (e) {
+        console.error('Chyba v saveTopenieSettings:', e);
+        showToast("Chyba pri ukladaní nastavení topenia", "error");
       }
     }
 

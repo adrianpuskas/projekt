@@ -1,0 +1,1 @@
+Otestovat, oprava chyby ze pri automatike pri restarte flask servera hodi 60% polohu dvierok 

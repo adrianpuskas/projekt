@@ -3,7 +3,6 @@
 #include <AccelStepper.h>
 #include <HTTPClient.h>
 #include <cmath>
-#include <Preferences.h>  // NOVÉ: Pre persistentné ukladanie (EEPROM-like)
 
 char ssid[] = "ESP"; // meno Wi-Fi siete
 char pass[] = "202PuskaS"; // heslo Wi-Fi siete
@@ -59,9 +58,6 @@ const unsigned long wifiReconnectInterval = 10000; // Skús reconnect každých 
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 300; // Zvýšené na 300ms pre lepšie filtrovanie bounce
 int lastButtonState = HIGH; // Počiatočný stav (HIGH = neuvoľnené)
-
-// NOVÉ: Preferences pre ukladanie polohy (persistentné)
-Preferences prefs;
 
 // Zapisovanie do local servera
 int sendToLocalServer(const String& key, float value) {
@@ -217,12 +213,6 @@ void inicializaciaPolohy() {
   poloha_dvierok_aktualna = 100; // nastavíme na 100%
   poloha_dvierok_pozadovana = 100;
 
-  // NOVÉ: Ulož počiatočnú polohu do Preferences
-  prefs.begin("kotol_prefs");
-  prefs.putFloat("pol_aktualna", poloha_dvierok_aktualna);
-  prefs.putFloat("pol_pozadovana", poloha_dvierok_pozadovana);
-  prefs.end();
-
   sendToLocalServer("poloha_dvierok_aktualna", 100);
   sendToLocalServer("poloha_dvierok_pozadovana", 100);
 
@@ -369,12 +359,6 @@ void pohybujMotorom() {
     poloha_dvierok_aktualna = round(kroky * 100.0 / maxKroky);
     sendToLocalServer("poloha_dvierok_aktualna", poloha_dvierok_aktualna);
 
-    // NOVÉ: Ulož novú polohu do Preferences vždy po zmene
-    prefs.begin("kotol_prefs");
-    prefs.putFloat("pol_aktualna", poloha_dvierok_aktualna);
-    prefs.putFloat("pol_pozadovana", poloha_dvierok_pozadovana);
-    prefs.end();
-
     digitalWrite(sleep_pin, LOW);
     digitalWrite(reset_pin, LOW);
     zmena = false;
@@ -445,12 +429,6 @@ void setup() {
   pinMode(spinac_hore, INPUT_PULLUP);
   pinMode(tlacidlo_zavriet, INPUT_PULLUP);
 
-  // NOVÉ: Načítaj poslednú uloženú polohu z Preferences (pred inicializáciou)
-  prefs.begin("kotol_prefs");
-  poloha_dvierok_aktualna = prefs.getFloat("pol_aktualna", 0.0);  // Default 0 ak nič uložené
-  poloha_dvierok_pozadovana = prefs.getFloat("pol_pozadovana", 0.0);
-  prefs.end();
-
   // Inicializácia dostupnosti servera
   serverAvailable = isServerAvailable();
 
@@ -463,27 +441,8 @@ void setup() {
     }
   }
 
-  // Počiatočná inicializácia polohy (ak nie je uložená, alebo resetovať)
-  if (poloha_dvierok_aktualna == 0 && poloha_dvierok_pozadovana == 0) {
-    inicializaciaPolohy();  // Len ak nič uložené, inicializuj na 100%
-  } else {
-    // NOVÉ: Nastav motor na uloženú polohu (bez plnej inicializácie)
-    kroky = round(poloha_dvierok_aktualna * maxKroky / 100.0);  // Predpokladaj maxKroky z predchádzajúceho (ak treba, ulož aj maxKroky)
-    // Ak maxKroky nie je uložené, môžeš ho uložiť podobne: prefs.putInt("max_kroky", maxKroky); v inicializaciaPolohy()
-    // A načítať: maxKroky = prefs.getInt("max_kroky", 0);
-    // Ak 0, spusti plnú inicializáciu
-    if (maxKroky == 0) {
-      inicializaciaPolohy();
-    }
-  }
-
-  // NOVÉ: Počkaj na prvú validnú teplotu (aby sa vyhlo 60% z 0 teploty)
-  unsigned long startTime = millis();
-  while (teplota_kotla <= 0 && millis() - startTime < 10000) {  // Čakaj max 10s
-    teplota_kotla = readFromLocalServer("teplota_kotla");
-    delay(500);
-  }
-  if (teplota_kotla <= 0) teplota_kotla = 25.0;  // Default ak stále 0 (izbová teplota)
+  // Počiatočná inicializácia polohy
+  inicializaciaPolohy();
 }
 
 void loop() {
