@@ -1352,7 +1352,7 @@ HTML_TEMPLATE = r"""
           <div class="col-6 col-lg-3 mb-2">
             <div class="card p-3 shadow-sm" style="height: 120px;">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong class="small">Teplota TUV</strong>
+                <strong class="small">TUV</strong>
                 <span class="fs-4 fw-bold" id="temp-tuv">- °C</span>
               </div>
               <div class="temp-bar">
@@ -1385,7 +1385,7 @@ HTML_TEMPLATE = r"""
           <div class="col-6 col-lg-3 mb-2">
             <div class="card p-3 shadow-sm" style="height: 120px;">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong class="small">Poloha dvierok</strong>
+                <strong class="small">Dvierka</strong>
                 <span class="fs-4 fw-bold" id="poloha-dvierok">- %</span>
               </div>
               <div class="temp-bar">
@@ -1404,16 +1404,16 @@ HTML_TEMPLATE = r"""
               <!-- Režim topenia -->
               <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
                 <div class="switch-label small mb-1">Režim topenia</div>
-                <div class="blynk-switch" id="sw-rezim" onclick="toggleSwitch(this, 'topenie_rezim')" style="width: 180px;">
+                <div class="blynk-switch" id="sw-rezim" onclick="toggleSwitch(this, 'topenie_rezim')" style="width: 210px;">
                   <div class="switch-half left">Automatika</div>
-                  <div class="switch-half right">Manuál</div>
+                  <div class="switch-half right">Manual</div>
                   <div class="switch-slider"></div>
                 </div>
               </div>
               <!-- Priorita topenia -->
               <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
                 <div class="switch-label small mb-1">Priorita topenia</div>
-                <div class="blynk-switch" id="sw-priorita" onclick="toggleSwitch(this, 'ovladanie_priorita_topenie')" style="width: 180px;">
+                <div class="blynk-switch" id="sw-priorita" onclick="toggleSwitch(this, 'ovladanie_priorita_topenie')" style="width: 210px;">
                   <div class="switch-half left">Radiátory</div>
                   <div class="switch-half right">TUV</div>
                   <div class="switch-slider"></div>
@@ -1425,10 +1425,10 @@ HTML_TEMPLATE = r"""
           <!-- Druhý card: Čerpadlo + Ventil TUV (vedľa seba) -->
           <div class="col-12 col-md-6 col-lg-4">
             <div class="switch-card d-flex flex-wrap justify-content-center gap-3 p-3">
-              <!-- Čerpadlo kotla -->
+              <!-- Ventil radiatory -->
               <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
-                <div class="switch-label small mb-1">Čerpadlo kotla</div>
-                <div class="blynk-switch" id="sw-cerpadlo" onclick="toggleSwitch(this, 'ovladanie_rele_cerpadlo')" style="width: 180px;">
+                <div class="switch-label small mb-1">Ventil Radiátory</div>
+                <div class="blynk-switch" id="sw-radiatory" onclick="toggleSwitch(this, 'ovladanie_rele_radiatory')" style="width: 210px;">
                   <div class="switch-half left">VYP</div>
                   <div class="switch-half right">ZAP</div>
                   <div class="switch-slider"></div>
@@ -1437,7 +1437,7 @@ HTML_TEMPLATE = r"""
               <!-- Ventil TUV -->
               <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
                 <div class="switch-label small mb-1">Ventil TUV</div>
-                <div class="blynk-switch" id="sw-tuv" onclick="toggleSwitch(this, 'ovladanie_rele_tuv')" style="width: 180px;">
+                <div class="blynk-switch" id="sw-tuv" onclick="toggleSwitch(this, 'ovladanie_rele_tuv')" style="width: 210px;">
                   <div class="switch-half left">VYP</div>
                   <div class="switch-half right">ZAP</div>
                   <div class="switch-slider"></div>
@@ -1445,14 +1445,13 @@ HTML_TEMPLATE = r"""
               </div>
             </div>
           </div>
-
-          <!-- Tretí card: Ventil Radiátory (sám) -->
+          <!-- Tretí card: Čerpadlo kotla (sám) -->
           <div class="col-12 col-md-6 col-lg-4">
             <div class="switch-card d-flex flex-wrap justify-content-center gap-3 p-3">
               <!-- Ventil Radiátory -->
               <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
-                <div class="switch-label small mb-1">Ventil Radiátory</div>
-                <div class="blynk-switch" id="sw-radiatory" onclick="toggleSwitch(this, 'ovladanie_rele_radiatory')" style="width: 180px;">
+                <div class="switch-label small mb-1">Čerpadlo kotla</div>
+                <div class="blynk-switch" id="sw-cerpadlo" onclick="toggleSwitch(this, 'ovladanie_rele_cerpadlo')" style="width: 210px;">
                   <div class="switch-half left">VYP</div>
                   <div class="switch-half right">ZAP</div>
                   <div class="switch-slider"></div>
@@ -1463,23 +1462,25 @@ HTML_TEMPLATE = r"""
         </div>
         <!-- Nová sekcia: Ovládanie dvierok kotla (pod existujúcimi prepínačmi) -->
         <h5 class="text-center text-primary mt-4 mb-3">Ovládanie dvierok kotla</h5>
-        <div class="row g-2 switch-row justify-content-center">
+        <div class="row g-3 justify-content-center">
 
           <!-- Prepínač: Režim dvierok kotla (Automatika/Manual) -->
-          <div class="col-6 col-md-4">
-            <div class="switch-card">
-              <div class="switch-label">Režim dvierok kotla</div>
-              <div class="blynk-switch" id="sw-kotol-rezim" onclick="toggleSwitch(this, 'topenie_kotol_rezim')">
-                <div class="switch-half left">Automatika</div>
-                <div class="switch-half right">Manual</div>
-                <div class="switch-slider"></div>
+          <div class="col-12 col-md-6 col-lg-4">
+            <div class="switch-card d-flex flex-wrap justify-content-center gap-3 p-3">
+              <div class="d-flex flex-column align-items-center" style="flex: 1; min-width: 150px;">
+                <div class="switch-label small mb-1">Režim dvierok kotla</div>
+                <div class="blynk-switch" id="sw-kotol-rezim" onclick="toggleSwitch(this, 'topenie_kotol_rezim')" style="width: 210px;">
+                  <div class="switch-half left">Automatika</div>
+                  <div class="switch-half right">Manual</div>
+                  <div class="switch-slider"></div>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Prepínač: Manuálne zatvorenie dvierok (OFF/ON) -->
-          <div class="col-6 col-md-4">
-            <div class="switch-card">
+          <div class="col-12 col-md-6 col-lg-4">
+            <div class="switch-card d-flex flex-wrap justify-content-center gap-3 p-3">
               <div class="switch-label">Manuálne zatvorenie dvierok</div>
               <button class="btn btn-danger" onclick="sendValue('ovladanie_manualne_zatvorenie_dvierok', 1)">
                 <i class="fas fa-door-closed"></i> Zatvoriť/Otvoriť dvierka
@@ -1683,12 +1684,15 @@ HTML_TEMPLATE = r"""
       document.querySelectorAll('.topenie-sub').forEach(s => s.classList.remove('active'));
       document.getElementById('topenie-' + id)?.classList.add('active');
       
+      // Inicializuj slidery (listeners) ihneď pri vstupe do relevantných podstránok
+      initSliders();  // Volaj vždy, ale flag zabráni duplicitám
+      
       if (id === 'nastavenia') {
-        loadTopenieSettings();  // Fetch a update inputov
+        updateTopenieSettings();  // Načítaj inputy/slidery
       }
       
       if (id === 'prehled' || id === 'ovladanie') {
-        updateTopenieSensors();  // Ihneď aktualizuj dynamické hodnoty
+        updateTopenieSensors();  // Aktualizuj senzory/texty
         updateTopenieOvl();
       }
     }
@@ -2403,48 +2407,71 @@ HTML_TEMPLATE = r"""
         document.getElementById('teplota_zapnutie_cerpadla_kotol_nad').value = data['teplota_zapnutie_cerpadla_kotol_nad'] || '';
         document.getElementById('teplota_ovladanie_cerpadla_dymovod').value = data['teplota_ovladanie_cerpadla_dymovod'] || '';
         
-        // NOVÉ: Inicializácia sliderov s reálnym časom (počas posúvania)
+        // Plnenie sliderov (bez listeners – tie sú v initSliders)
         const sliderTeplota = document.getElementById('nastavenie_pracovna_teplota_kotla');
         if (sliderTeplota) {
           sliderTeplota.value = data['nastavenie_pracovna_teplota_kotla'] || 0;
           const valTeplota = document.getElementById('val-pracovna-teplota');
-          valTeplota.textContent = sliderTeplota.value + ' °C';  // Inicializuj hneď
-          
-          // Počas posúvania: Aktualizuj zobrazenú hodnotu v reálnom čase
-          sliderTeplota.addEventListener('input', () => {
-            valTeplota.textContent = sliderTeplota.value + ' °C';
-          });
-          
-          // Po uvoľnení: Ulož hodnotu (ak chceš automatické ukladanie; ak nie, odstráň toto)
-          sliderTeplota.addEventListener('change', () => {
-            sendValue('nastavenie_pracovna_teplota_kotla', parseFloat(sliderTeplota.value));
-            showToast(`Teplota kotla nastavená na ${sliderTeplota.value} °C`, "success");
-          });
+          if (valTeplota) valTeplota.textContent = sliderTeplota.value + ' °C';
         }
 
         const sliderPoloha = document.getElementById('poloha_dvierok_pozadovana');
         if (sliderPoloha) {
           sliderPoloha.value = data['poloha_dvierok_pozadovana'] || 0;
           const valPoloha = document.getElementById('val-pozadovana-poloha');
-          valPoloha.textContent = sliderPoloha.value + ' %';  // Inicializuj hneď
-          
+          if (valPoloha) valPoloha.textContent = sliderPoloha.value + ' %';
+          sliderPoloha.disabled = (data.topenie_kotol_rezim !== 1);  // Disabled ak nie manual
+        }
+
+        showToast("Hodnoty načítané zo servera", "success");  // Tvoje pôvodné hlásenie
+      } catch (e) {
+        console.error('Chyba v updateTopenieSettings:', e);
+        showToast("Chyba pri načítaní nastavení topenia", "error");
+      }
+    }
+
+    let slidersInitialized = false;  // Globálny flag, aby sa listeners nepridávali viackrát
+
+    function initSliders() {
+      if (slidersInitialized) return;  // Ak už inicializované, skip
+
+      try {
+        // Inicializácia slidera pre pracovnú teplotu kotla
+        const sliderTeplota = document.getElementById('nastavenie_pracovna_teplota_kotla');
+        if (sliderTeplota) {
           // Počas posúvania: Aktualizuj zobrazenú hodnotu v reálnom čase
-          sliderPoloha.addEventListener('input', () => {
-            valPoloha.textContent = sliderPoloha.value + ' %';
+          sliderTeplota.addEventListener('input', () => {
+            const valTeplota = document.getElementById('val-pracovna-teplota');
+            if (valTeplota) valTeplota.textContent = sliderTeplota.value + ' °C';
           });
           
-          // Po uvoľnení: Ulož hodnotu (ak chceš automatické ukladanie; ak nie, odstráň toto)
+          // Po uvoľnení: Ulož hodnotu (ak chceš automatické ukladanie; ak nie, odstráň)
+          sliderTeplota.addEventListener('change', () => {
+            sendValue('nastavenie_pracovna_teplota_kotla', parseFloat(sliderTeplota.value));
+            showToast(`Teplota kotla nastavená na ${sliderTeplota.value} °C`, "success");
+          });
+        }
+
+        // Inicializácia slidera pre polohu dvierok
+        const sliderPoloha = document.getElementById('poloha_dvierok_pozadovana');
+        if (sliderPoloha) {
+          // Počas posúvania: Aktualizuj zobrazenú hodnotu v reálnom čase
+          sliderPoloha.addEventListener('input', () => {
+            const valPoloha = document.getElementById('val-pozadovana-poloha');
+            if (valPoloha) valPoloha.textContent = sliderPoloha.value + ' %';
+          });
+          
+          // Po uvoľnení: Ulož hodnotu (ak chceš automatické ukladanie; ak nie, odstráň)
           sliderPoloha.addEventListener('change', () => {
             sendValue('poloha_dvierok_pozadovana', parseFloat(sliderPoloha.value));
             showToast(`Poloha dvierok nastavená na ${sliderPoloha.value} %`, "success");
           });
-          
-          // Disable ak nie manual režim (ako predtým)
-          sliderPoloha.disabled = (data.topenie_kotol_rezim !== 1);
         }
+
+        slidersInitialized = true;  // Označ ako inicializované
       } catch (e) {
-        console.error('Chyba v updateTopenieSettings:', e);
-        showToast("Chyba pri načítaní nastavení topenia", "error");
+        console.error('Chyba v initSliders:', e);
+        showToast("Chyba pri inicializácii sliderov", "error");
       }
     }
 
