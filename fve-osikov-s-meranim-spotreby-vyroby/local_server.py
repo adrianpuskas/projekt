@@ -1352,22 +1352,22 @@ HTML_TEMPLATE = r"""
           <div class="col-6 col-lg-3 mb-2">
             <div class="card p-3 shadow-sm" style="height: 120px;">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong class="small">TUV</strong>
-                <span class="fs-4 fw-bold" id="temp-tuv">- °C</span>
+                <strong class="small">Kotol</strong>
+                <span class="fs-4 fw-bold" id="temp-kotol">- °C</span>
               </div>
               <div class="temp-bar">
-                <div class="temp-bar-fill" id="bar-tuv"></div>
+                <div class="temp-bar-fill" id="bar-kotol"></div>
               </div>
             </div>
           </div>
           <div class="col-6 col-lg-3 mb-2">
             <div class="card p-3 shadow-sm" style="height: 120px;">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong class="small">Kotol</strong>
-                <span class="fs-4 fw-bold" id="temp-kotol">- °C</span>
+                <strong class="small">TUV</strong>
+                <span class="fs-4 fw-bold" id="temp-tuv">- °C</span>
               </div>
               <div class="temp-bar">
-                <div class="temp-bar-fill" id="bar-kotol"></div>
+                <div class="temp-bar-fill" id="bar-tuv"></div>
               </div>
             </div>
           </div>
